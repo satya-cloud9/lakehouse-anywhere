@@ -1,0 +1,10 @@
+.terraform/
+.terraform.lock.hcl
+*.tfstate
+*.tfstate.*
+crash.log
+*.env
+.env
+kubeconfig
+*.kubeconfig
+.DS_Store
