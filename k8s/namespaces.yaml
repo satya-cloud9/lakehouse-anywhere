@@ -1,0 +1,13 @@
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: data-plane
+  labels:
+    purpose: minio-trino-kestra
+---
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: observability
+  labels:
+    purpose: prometheus-grafana-loki-tempo
