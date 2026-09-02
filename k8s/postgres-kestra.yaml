@@ -1,0 +1,83 @@
+# A plain, single-replica Postgres for Kestra's backend (queue + repository).
+# Deployed as a raw manifest rather than a Helm subchart dependency so its
+# behavior is fully known/controlled rather than riding on whatever Postgres
+# subchart version the Kestra chart happens to pin. Not HA — fine for a test
+# rig, not how you'd run Kestra's backend in production.
+
+apiVersion: v1
+kind: Secret
+metadata:
+  name: kestra-postgres
+  namespace: data-plane
+type: Opaque
+stringData:
+  POSTGRES_USER: kestra
+  POSTGRES_PASSWORD: kestra   # local-only demo credential — do not reuse anywhere real
+  POSTGRES_DB: kestra
+---
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: kestra-postgres-data
+  namespace: data-plane
+spec:
+  accessModes: ["ReadWriteOnce"]
+  resources:
+    requests:
+      storage: 5Gi
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: kestra-postgres
+  namespace: data-plane
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: kestra-postgres
+  template:
+    metadata:
+      labels:
+        app: kestra-postgres
+    spec:
+      containers:
+        - name: postgres
+          image: postgres:16-alpine
+          envFrom:
+            - secretRef:
+                name: kestra-postgres
+          ports:
+            - containerPort: 5432
+          resources:
+            requests:
+              cpu: 250m
+              memory: 512Mi
+            limits:
+              cpu: 500m
+              memory: 1Gi
+          volumeMounts:
+            - name: data
+              mountPath: /var/lib/postgresql/data
+              subPath: pgdata
+          readinessProbe:
+            exec:
+              command: ["pg_isready", "-U", "kestra"]
+            initialDelaySeconds: 5
+            periodSeconds: 5
+      volumes:
+        - name: data
+          persistentVolumeClaim:
+            claimName: kestra-postgres-data
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: kestra-postgres
+  namespace: data-plane
+spec:
+  selector:
+    app: kestra-postgres
+  ports:
+    - port: 5432
+      targetPort: 5432

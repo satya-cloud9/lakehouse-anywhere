@@ -1,0 +1,64 @@
+# Chart: kestra-io/kestra (https://helm.kestra.io) — repo: https://helm.kestra.io
+# helm install kestra kestra/kestra -n data-plane -f helm-values/kestra-values.yaml
+#
+# Standalone deployment (webserver + executor + worker + scheduler in one
+# process) against the Postgres deployed by k8s/postgres-kestra.yaml.
+# Kestra's own documented minimum is 4Gi RAM / 2 vCPU standalone — the
+# resources block below sits right at that floor; raise it if flows are
+# slow to schedule/pick up.
+#
+# CHART SCHEMA CAVEAT: this was written from the Kestra Helm chart's
+# documented shape, not verified against a live `helm install` (this repo
+# was built in a sandbox without registry access). Run `helm show values
+# kestra/kestra` first and reconcile any key names that have drifted before
+# `helm install` — the `configuration:` block (Kestra's application.yaml)
+# is the part most likely to need adjusting.
+
+deployment:
+  type: Standalone
+
+image:
+  tag: latest   # pin a version once this has been run once
+
+resources:
+  requests:
+    cpu: "1"
+    memory: 2Gi
+  limits:
+    cpu: "2"
+    memory: 4Gi
+
+# Kestra's application.yaml, inlined. Postgres backend, local file storage
+# for task outputs (simplest for a first pass — switch to the S3 storage
+# plugin pointed at MinIO once this is running, for parity with a real-AWS
+# deployment).
+configuration: |
+  datasources:
+    postgres:
+      url: jdbc:postgresql://kestra-postgres.data-plane.svc.cluster.local:5432/kestra
+      driverClassName: org.postgresql.Driver
+      username: kestra
+      password: kestra
+  kestra:
+    server:
+      basicAuth:
+        enabled: false
+    repository:
+      type: postgres
+    storage:
+      type: local
+      local:
+        base-path: "/app/storage"
+    queue:
+      type: postgres
+    tasks:
+      tmp-dir:
+        path: /tmp/kestra-wd/tmp
+
+persistence:
+  enabled: true
+  size: 10Gi
+
+service:
+  type: ClusterIP
+  port: 8080

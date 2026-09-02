@@ -1,0 +1,36 @@
+# Chart: minio/minio (https://charts.min.io/)  — repo: https://charts.min.io/
+# helm install minio minio/minio -n data-plane -f helm-values/minio-values.yaml
+#
+# MinIO is the S3-compatible data plane for Iceberg files (see README's
+# "How the AWS layer is simulated"). Standalone single-drive mode — fine for
+# a test rig, not how you'd run MinIO in production.
+
+mode: standalone
+
+rootUser: minioadmin
+rootPassword: minioadmin   # local-only demo credential — do not reuse anywhere real
+
+persistence:
+  enabled: true
+  size: 20Gi
+
+resources:
+  requests:
+    cpu: 250m
+    memory: 512Mi
+  limits:
+    cpu: "1"
+    memory: 1Gi
+
+# Auto-create the Iceberg warehouse bucket on startup.
+buckets:
+  - name: warehouse
+    policy: none
+    purge: false
+
+consoleService:
+  type: ClusterIP
+
+service:
+  type: ClusterIP
+  port: 9000

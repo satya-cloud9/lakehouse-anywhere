@@ -1,0 +1,65 @@
+# Chart: trinodb/trino (https://trinodb.github.io/charts/) — repo: https://trinodb.github.io/charts
+# helm install trino trino/trino -n data-plane -f helm-values/trino-values.yaml
+#
+# Single coordinator + single worker — enough to prove the pipeline works,
+# not a performance configuration. Bump `worker.replicas` and the JVM/query
+# memory settings once this is running and you want to push real data
+# through it.
+
+image:
+  tag: latest   # pin a version once this has been run once, e.g. "460"
+
+server:
+  workers: 1
+  # 70-85% of the pod's memory limit, per Trino's own JVM heap guidance.
+  # At 2Gi limit -> ~1.5G heap. Raise both together if the 8GB-box trimming
+  # in README.md isn't in effect.
+  config:
+    query:
+      maxMemoryPerNode: "1GB"
+
+coordinator:
+  jvm:
+    maxHeapSize: "1536M"
+  resources:
+    requests:
+      cpu: 500m
+      memory: 1Gi
+    limits:
+      cpu: "1"
+      memory: 2Gi
+
+worker:
+  replicas: 1
+  jvm:
+    maxHeapSize: "1536M"
+  resources:
+    requests:
+      cpu: 500m
+      memory: 1Gi
+    limits:
+      cpu: "1"
+      memory: 2Gi
+
+# --- Iceberg catalog ---
+# hive.s3.* config authenticates to MinIO (the data plane). The glue.*
+# config points the metadata catalog lookups at LocalStack instead of real
+# AWS Glue — LOCALSTACK_HOST below must resolve from inside the kind
+# cluster; scripts/05-deploy-stack.sh rewrites it to the LocalStack
+# container's reachable address (host.docker.internal or the Docker bridge
+# IP) before installing this chart, since "localhost" inside a pod means the
+# pod itself, not the host.
+additionalCatalogs:
+  iceberg: |
+    connector.name=iceberg
+    iceberg.catalog.type=glue
+    hive.metastore.glue.endpoint-url=http://LOCALSTACK_HOST:4566
+    hive.s3.aws-access-key=minioadmin
+    hive.s3.aws-secret-key=minioadmin
+    hive.s3.endpoint=http://minio.data-plane.svc.cluster.local:9000
+    hive.s3.path-style-access=true
+    hive.s3.ssl.enabled=false
+    iceberg.file-format=PARQUET
+
+accessControl:
+  type: allow-all
