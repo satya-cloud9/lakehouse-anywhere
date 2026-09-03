@@ -1,16 +1,32 @@
 # Architecture notes
 
-## Why MinIO *and* LocalStack, not just one
+## Why LocalStack got swapped for floci
 
-LocalStack has its own S3 implementation, so in principle it alone could
-serve as both the AWS control plane and the S3 data plane. In practice,
-splitting them — LocalStack for control-plane APIs (IAM/STS/Glue/KMS/EC2),
-MinIO for the actual object storage Trino reads and writes — is the
-pattern most local Iceberg lakehouse setups converge on, because:
+This repo originally ran LocalStack for the AWS control-plane emulation.
+LocalStack's free community image was sunset on March 23, 2026 — pulling
+`localstack/localstack:latest` now requires creating an account and an auth
+token, and LocalStack archived the old open-source GitHub repos in the
+process. floci is a newer MIT-licensed alternative that's wire-compatible
+on the same port (4566) and the same `/_localstack/health` check, so the
+swap didn't touch anything above the emulator layer — just
+`docker-compose.floci.yml`, the container name, and the
+`aws_emulator_endpoint` Terraform variable (previously `localstack_endpoint`).
+It also has a much smaller footprint (~13 MiB idle, ~24ms startup vs
+LocalStack's JVM-based ~250 MiB+/several seconds), which matters on our
+16GB budget. The tradeoff: floci is a much younger, less battle-tested
+project — worth watching for rough edges as we actually run this.
 
-- MinIO is a purpose-built, fast S3-compatible object store; LocalStack's S3
+## Why MinIO *and* floci, not just one
+
+floci has its own S3 implementation, so in principle it alone could serve
+as both the AWS control plane and the S3 data plane. In practice, splitting
+them — floci for control-plane APIs (IAM/STS/Glue/KMS/EC2), MinIO for the
+actual object storage Trino reads and writes — is the pattern most local
+Iceberg lakehouse setups converge on, because:
+
+- MinIO is a purpose-built, fast S3-compatible object store; floci's S3
   emulation is fine for control-plane-adjacent operations (bucket
-  creation, policy checks) but isn't optimized for the volume of small
+  creation, policy checks) but isn't the one built for the volume of small
   PUT/GET calls Iceberg's manifest-file-heavy layout generates.
 - It mirrors how many real deployments already separate "the S3 API my
   IaC creates buckets against" from "the S3-compatible endpoint my data
@@ -18,13 +34,15 @@ pattern most local Iceberg lakehouse setups converge on, because:
 
 ## Why not simulate EKS itself
 
-LocalStack can emulate the EKS *API* (Pro tier only), but under the hood
-that emulation is just a `kind` cluster anyway — LocalStack doesn't run a
-second, more-real Kubernetes control plane for it. Given that, pointing
-Terraform's `kubernetes`/`helm` providers directly at a `kind` cluster
-gets you the same practical result (a real Kubernetes API to apply
-manifests against) without a Pro license and without an extra layer of
-indirection to debug through when something goes wrong.
+LocalStack could emulate the EKS *API* (Pro tier only), but under the hood
+that emulation was just a `kind` cluster anyway — it didn't run a second,
+more-real Kubernetes control plane for it. floci doesn't offer EKS
+emulation as a distinct product tier at all — EKS is just one of its 85
+in-process/Docker-backed services, but the same reasoning applies: pointing
+Terraform's `kubernetes`/`helm` providers directly at a `kind` cluster gets
+you the same practical result (a real Kubernetes API to apply manifests
+against) without an extra layer of indirection to debug through when
+something goes wrong.
 
 The tradeoff: none of the EKS-specific control-plane behavior (the AWS
 IAM ↔ Kubernetes RBAC mapping via `aws-auth`/access entries, EKS managed
@@ -34,12 +52,12 @@ node group + IRSA-OIDC-provider Terraform layer that doesn't exist yet in
 this repo — everything here assumes a Kubernetes API is already there to
 target.
 
-## Why Glue-via-LocalStack for the Iceberg catalog, not a REST catalog
+## Why Glue-via-floci for the Iceberg catalog, not a REST catalog
 
 Trino's Iceberg connector supports several catalog backends (Glue, Hive
 Metastore, a REST catalog like Nessie/Polaris, JDBC). Glue was picked
 here specifically because it's the one that carries over to real AWS
-with the least change — swap the LocalStack endpoint override for nothing
+with the least change — swap the floci endpoint override for nothing
 (real Glue needs no endpoint override) and real IAM credentials, and the
 same `additionalCatalogs.iceberg` block should work. A REST catalog
 (Nessie/Polaris) gets you table branching/versioning semantics Glue

@@ -1,11 +1,11 @@
 #!/usr/bin/env bash
-# Phase 3: apply the AWS-shaped Terraform against LocalStack.
+# Phase 3: apply the AWS-shaped Terraform against floci.
 set -euo pipefail
 
 cd "$(dirname "$0")/../terraform"
 
 if ! curl -fs http://localhost:4566/_localstack/health >/dev/null 2>&1; then
-  echo "LocalStack doesn't look reachable at http://localhost:4566 — run 'make localstack-up' first."
+  echo "floci doesn't look reachable at http://localhost:4566 — run 'make floci-up' first."
   exit 1
 fi
 

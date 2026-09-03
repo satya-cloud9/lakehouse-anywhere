@@ -1,5 +1,5 @@
 # S3 bucket representing the Iceberg warehouse root in AWS-shaped resources.
-# Created against LocalStack for parity with what you'd apply against real
+# Created against floci for parity with what you'd apply against real
 # AWS. IMPORTANT: the local Trino/kind stack actually reads and writes
 # through MinIO (helm-values/minio-values.yaml), not this bucket — see the
 # note on var.iceberg_warehouse_bucket_name. Reconciling the two (pointing

@@ -1,10 +1,10 @@
 # lakehouse-on-eks (local simulator)
 
 A local build/test rig for a lakehouse stack — Terraform, Kestra, Iceberg, Trino,
-and observability — designed to run entirely on one Linux box via LocalStack +
+and observability — designed to run entirely on one Linux box via floci +
 `kind`, before any of it touches a real AWS account. The end state (Terraform
 providers, Helm charts, Kestra flows) is written to be as close as practical to
-what you'd point at real AWS/EKS later — LocalStack and kind stand in for AWS
+what you'd point at real AWS/EKS later — floci and kind stand in for AWS
 and EKS, everything above that layer (Trino, Kestra, Iceberg, observability)
 is the same software you'd run in production.
 
@@ -14,14 +14,19 @@ There is no single "EKS simulator" here — two separate free/open tools cover
 two separate concerns, which is also how most real local-lakehouse dev setups
 are built:
 
-- **LocalStack** emulates the AWS *control plane*: IAM roles/policies, STS
+- **floci** emulates the AWS *control plane*: IAM roles/policies, STS
   (for IRSA-style role assumption), the Glue Data Catalog (Iceberg table
   metadata), KMS, and VPC/EC2 resources (so Terraform's plan/apply graph is
-  real and testable). Note: LocalStack Community does not enforce IAM policy
-  the way real AWS does — `terraform apply` succeeding here doesn't guarantee
-  the same IAM policy is actually correct against real AWS.
+  real and testable). This was originally LocalStack — swapped to floci
+  because LocalStack's free community image was sunset on March 23, 2026 and
+  now requires an account + auth token to pull. floci is MIT-licensed, no
+  auth token ever, wire-compatible on the same port and health-check path,
+  and much lighter (~13 MiB idle vs LocalStack's ~250 MiB+). Neither one
+  enforces IAM policy the way real AWS does — `terraform apply` succeeding
+  here doesn't guarantee the same IAM policy is actually correct against
+  real AWS.
 - **MinIO** is the S3-compatible *data plane* — the actual bytes (Parquet
-  files, Iceberg metadata/manifest files) that Trino reads and writes. LocalStack
+  files, Iceberg metadata/manifest files) that Trino reads and writes. floci
   has an S3 implementation too, but MinIO is faster and more realistic for
   actual data I/O, so that's the split used here.
 - **`kind`** is the Kubernetes substrate. We do not simulate the EKS control-plane
@@ -35,7 +40,7 @@ are built:
 
 | Layer | Component | Notes |
 |---|---|---|
-| AWS control plane | LocalStack | IAM, STS, Glue Data Catalog, KMS, VPC/EC2 |
+| AWS control plane | floci | IAM, STS, Glue Data Catalog, KMS, VPC/EC2 |
 | AWS data plane | MinIO | S3-compatible object store for the Iceberg warehouse |
 | Kubernetes | kind | 1 control-plane + 2 worker nodes |
 | Query engine | Trino | Iceberg connector, catalog backed by Glue (via LocalStack) + MinIO |
@@ -44,7 +49,7 @@ are built:
 | Metrics | kube-prometheus-stack (Prometheus + Grafana) | |
 | Logs | Loki + Promtail | |
 | Traces | Tempo | |
-| IaC | Terraform (or OpenTofu) | targets LocalStack via endpoint overrides |
+| IaC | Terraform (or OpenTofu) | targets floci via endpoint overrides |
 
 ## Sizing
 
@@ -64,17 +69,17 @@ re-running everything before it.
 ```
 make preflight       # phase 0: check the box meets the sizing assumptions
 make install          # phase 1: install docker, kind, kubectl, helm, tofu, awslocal
-make localstack-up    # phase 2: start LocalStack, wait for it to be healthy
-make tf-apply          # phase 3: terraform apply against LocalStack
+make floci-up          # phase 2: start floci, wait for it to be healthy
+make tf-apply          # phase 3: terraform apply against floci
 make kind-up           # phase 4: create the kind cluster
 make deploy             # phase 5: helm install minio, trino, kestra, observability
 make flows               # phase 6: register the example Kestra flow
 make status               # print all service URLs / port-forward commands
 ```
 
-`make down` tears down the kind cluster and stops LocalStack, leaving
-Terraform state and everything in git untouched. `make tf-destroy` additionally
-tears down the Terraform-managed LocalStack resources.
+`make down` tears down the kind cluster and stops floci, leaving Terraform
+state and everything in git untouched. `make tf-destroy` additionally tears
+down the Terraform-managed floci resources.
 
 ## Trimming the footprint (8 GB boxes)
 
@@ -89,7 +94,7 @@ If you're testing on something smaller than 16 GB:
 
 ```
 scripts/           setup scripts, run in numeric order
-terraform/          AWS resources (VPC, IAM, Glue, KMS, S3) against LocalStack
+terraform/          AWS resources (VPC, IAM, Glue, KMS, S3) against floci
 kind/                kind cluster topology
 helm-values/     Helm values for MinIO, Trino, Kestra, observability
 k8s/                  plain manifests (namespaces, configmaps) not covered by Helm

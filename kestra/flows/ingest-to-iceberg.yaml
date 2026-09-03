@@ -1,5 +1,5 @@
 # Example flow proving the end-to-end path: Kestra -> Trino -> Iceberg
-# (Glue Data Catalog via LocalStack for metadata, MinIO for the actual
+# (Glue Data Catalog via floci for metadata, MinIO for the actual
 # Parquet files). Deliberately minimal — inserts literal sample rows via
 # SQL rather than staging external files, so the first run only has to
 # prove the pipeline wiring, not a real ingestion pattern. Swap the

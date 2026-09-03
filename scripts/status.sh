@@ -6,8 +6,8 @@ echo "=== kind cluster ==="
 kind get clusters 2>/dev/null | grep -q '^lakehouse$' && echo "lakehouse: up" || echo "lakehouse: not created (run 'make kind-up')"
 
 echo ""
-echo "=== LocalStack ==="
-curl -fs http://localhost:4566/_localstack/health >/dev/null 2>&1 && echo "localstack: healthy (http://localhost:4566)" || echo "localstack: not reachable (run 'make localstack-up')"
+echo "=== floci (AWS emulator) ==="
+curl -fs http://localhost:4566/_localstack/health >/dev/null 2>&1 && echo "floci: healthy (http://localhost:4566)" || echo "floci: not reachable (run 'make floci-up')"
 
 echo ""
 echo "=== Pods ==="

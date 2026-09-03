@@ -1,4 +1,4 @@
-# VPC/subnet/security-group resources. Under LocalStack these are created as
+# VPC/subnet/security-group resources. Under floci these are created as
 # metadata only (no real networking happens) — this validates that Terraform's
 # resource graph and references are correct, which is most of what you want
 # to shake out before pointing the same code at real AWS.

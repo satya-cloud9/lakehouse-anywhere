@@ -37,7 +37,7 @@ echo "Architecture: $ARCH"
 if [ "$ARCH" = "x86_64" ]; then
   pass "x86_64 — all images/binaries in this repo target this."
 elif [ "$ARCH" = "aarch64" ] || [ "$ARCH" = "arm64" ]; then
-  warn "ARM64 — most images used here (LocalStack, MinIO, Trino, Kestra, Prometheus/Grafana/Loki/Tempo) publish multi-arch builds, but this hasn't been verified on ARM. Flag any 'no matching manifest' pull errors."
+  warn "ARM64 — most images used here (floci, MinIO, Trino, Kestra, Prometheus/Grafana/Loki/Tempo) publish multi-arch builds, but this hasn't been verified on ARM. Flag any 'no matching manifest' pull errors."
 else
   fail "Unrecognized architecture: $ARCH"
 fi
@@ -49,7 +49,7 @@ echo "vCPUs: $CPUS"
 if [ "$CPUS" -ge 8 ]; then
   pass "8+ vCPUs — comfortable for the full stack."
 elif [ "$CPUS" -ge 4 ]; then
-  warn "4-7 vCPUs — workable, but the full stack (kind + LocalStack + Trino + Kestra + observability) may feel sluggish under load. CPU overcommit is generally fine for this workload since services are mostly idle/bursty."
+  warn "4-7 vCPUs — workable, but the full stack (kind + floci + Trino + Kestra + observability) may feel sluggish under load. CPU overcommit is generally fine for this workload since services are mostly idle/bursty."
 else
   fail "$CPUS vCPUs — likely too little to run kind plus the rest of the stack concurrently."
 fi
@@ -76,7 +76,7 @@ if [ "$DISK_AVAIL_GB" -ge 40 ]; then
 elif [ "$DISK_AVAIL_GB" -ge 20 ]; then
   warn "20-40 GB free — should be enough, but keep an eye on 'docker system df' as images accumulate."
 else
-  fail "${DISK_AVAIL_GB} GB free — likely not enough once you've pulled the LocalStack, MinIO, Trino, Kestra, and observability images (that's typically 5-8 GB of images alone)."
+  fail "${DISK_AVAIL_GB} GB free — likely not enough once you've pulled the floci, MinIO, Trino, Kestra, and observability images (that's typically 5-8 GB of images alone)."
 fi
 echo ""
 
@@ -96,6 +96,8 @@ echo ""
 
 # --- Outbound network check (the thing that broke in the sandbox this was built in) ---
 echo "Checking outbound access to the registries/APIs we need..."
+# registry-1.docker.io covers both floci/floci and every other image this
+# stack pulls (Trino, Kestra, MinIO, Prometheus, Grafana, Loki, Tempo).
 for host in "registry-1.docker.io" "get.opentofu.org" "dl.k8s.io" "github.com"; do
   if timeout 5 bash -c "cat < /dev/null > /dev/tcp/${host}/443" 2>/dev/null; then
     pass "Can reach $host:443"

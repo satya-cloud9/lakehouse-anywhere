@@ -75,7 +75,7 @@ else
   echo "OpenTofu already installed: $(tofu version)"
 fi
 
-# --- awslocal (awscli-local) — thin wrapper for ad-hoc `aws` calls against LocalStack ---
+# --- awslocal (awscli-local) — thin wrapper for ad-hoc `aws` calls against floci (same wrapper LocalStack used, still works since floci is wire-compatible) ---
 pip3 install --quiet --break-system-packages awscli-local awscli 2>&1 | tail -5 || \
   pip3 install --quiet --user awscli-local awscli 2>&1 | tail -5
 
@@ -90,4 +90,4 @@ tofu version || true
 awslocal --version 2>/dev/null || echo "awslocal: check 'pip3 show awscli-local' if this didn't print"
 
 echo ""
-echo "If this is the first install of Docker, run 'newgrp docker' (or log out/in) before continuing to 'make localstack-up'."
+echo "If this is the first install of Docker, run 'newgrp docker' (or log out/in) before continuing to 'make floci-up'."

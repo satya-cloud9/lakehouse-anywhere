@@ -23,26 +23,26 @@ echo "=== Deploying Postgres for Kestra ==="
 kubectl apply -f k8s/postgres-kestra.yaml
 kubectl -n data-plane rollout status deployment/kestra-postgres --timeout=120s
 
-# --- Bridge networking: let pods in the kind cluster reach the LocalStack
+# --- Bridge networking: let pods in the kind cluster reach the floci
 # container running via docker compose on the host. Docker's embedded DNS
 # only resolves container names within a shared user-defined network, and
-# pods don't share the node's Docker DNS anyway — so we connect LocalStack
-# to kind's Docker network and address it by IP, not name. See README for
-# why this is needed instead of `host.docker.internal` (works on Docker
+# pods don't share the node's Docker DNS anyway — so we connect floci to
+# kind's Docker network and address it by IP, not name. See README for why
+# this is needed instead of `host.docker.internal` (works on Docker
 # Desktop, not reliably on Linux Docker).
-echo "=== Bridging LocalStack into the kind Docker network ==="
-docker network connect kind lakehouse-localstack 2>/dev/null || echo "(already connected, or 'kind' network doesn't exist yet — run this after 'make kind-up')"
-LOCALSTACK_IP=$(docker inspect -f '{{ (index .NetworkSettings.Networks "kind").IPAddress }}' lakehouse-localstack)
-if [ -z "$LOCALSTACK_IP" ]; then
-  echo "Could not determine LocalStack's IP on the kind network. Run:"
-  echo "  docker inspect lakehouse-localstack | grep -A5 Networks"
+echo "=== Bridging floci into the kind Docker network ==="
+docker network connect kind lakehouse-floci 2>/dev/null || echo "(already connected, or 'kind' network doesn't exist yet — run this after 'make kind-up')"
+FLOCI_IP=$(docker inspect -f '{{ (index .NetworkSettings.Networks "kind").IPAddress }}' lakehouse-floci)
+if [ -z "$FLOCI_IP" ]; then
+  echo "Could not determine floci's IP on the kind network. Run:"
+  echo "  docker inspect lakehouse-floci | grep -A5 Networks"
   echo "and paste the output back."
   exit 1
 fi
-echo "LocalStack reachable from pods at: $LOCALSTACK_IP:4566"
+echo "floci reachable from pods at: $FLOCI_IP:4566"
 
 echo "=== Installing Trino ==="
-sed "s/LOCALSTACK_HOST/${LOCALSTACK_IP}/" helm-values/trino-values.yaml > /tmp/trino-values-rendered.yaml
+sed "s/AWS_EMULATOR_HOST/${FLOCI_IP}/" helm-values/trino-values.yaml > /tmp/trino-values-rendered.yaml
 helm upgrade --install trino trino/trino \
   -n data-plane --create-namespace \
   -f /tmp/trino-values-rendered.yaml \

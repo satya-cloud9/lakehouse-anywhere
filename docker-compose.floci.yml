@@ -1,0 +1,23 @@
+services:
+  floci:
+    image: floci/floci:latest   # pin a version once this has been run once, e.g. floci/floci:1.4.0
+    container_name: lakehouse-floci
+    ports:
+      - "4566:4566"   # same edge port LocalStack used — every emulated AWS API, one endpoint
+    environment:
+      - FLOCI_STORAGE_MODE=hybrid          # persists state to disk but keeps hot data in memory
+      - FLOCI_STORAGE_PERSISTENT_PATH=/app/data
+      - FLOCI_DEFAULT_REGION=us-east-1
+    volumes:
+      - "floci-data:/app/data"
+    healthcheck:
+      # Floci serves LocalStack's /_localstack/health path for drop-in
+      # compatibility, so this check (and the ones in scripts/03 and
+      # scripts/status.sh) didn't need to change when we swapped tools.
+      test: ["CMD", "curl", "-f", "http://localhost:4566/_localstack/health"]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+
+volumes:
+  floci-data:

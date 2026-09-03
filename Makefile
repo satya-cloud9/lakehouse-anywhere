@@ -1,6 +1,6 @@
 SHELL := /bin/bash
 
-.PHONY: preflight install localstack-up kind-up tf-apply tf-destroy deploy flows down clean status
+.PHONY: preflight install floci-up kind-up tf-apply tf-destroy deploy flows down clean status
 
 preflight:
 	bash scripts/00-preflight.sh
@@ -8,8 +8,8 @@ preflight:
 install:
 	bash scripts/01-install-deps.sh
 
-localstack-up:
-	bash scripts/02-start-localstack.sh
+floci-up:
+	bash scripts/02-start-floci.sh
 
 tf-apply:
 	bash scripts/03-terraform-apply.sh
@@ -34,6 +34,6 @@ down:
 
 # Full run, phase by phase. Intended to be run interactively the first time
 # so you can catch and report back any failure before the next phase starts.
-up: preflight install localstack-up tf-apply kind-up deploy flows
+up: preflight install floci-up tf-apply kind-up deploy flows
 	@echo ""
 	@echo "=== Stack is up. Run 'make status' for endpoints. ==="

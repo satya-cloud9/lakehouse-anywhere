@@ -1,6 +1,6 @@
 # Glue Data Catalog: the Iceberg table metadata catalog Trino's Iceberg
 # connector reads/writes against (catalog-type = glue in
-# helm-values/trino-values.yaml). LocalStack Community supports the core
+# helm-values/trino-values.yaml). floci supports the core
 # Glue Data Catalog APIs (CreateDatabase/CreateTable/GetTable/etc.) needed
 # for this without a Pro license.
 
