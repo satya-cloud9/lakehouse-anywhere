@@ -105,16 +105,20 @@ docs/               architecture notes
 
 ## Getting this onto your GitHub repo
 
-This directory is already a git repo with one commit per phase. On the cloud
-box (or wherever you have GitHub auth set up):
+This directory is already a git repo with one commit per phase — extracting
+the tarball is all the "cloning" you need to do; there's nothing further to
+pull. On the cloud box (or wherever you have GitHub auth set up), from
+inside this extracted directory:
 
 ```
-git clone <this-repo-as-a-tarball-extracted-locally>
-cd lakehouse-on-eks
+git branch -m master main
 git remote add origin git@github.com:<you>/<repo>.git
-git push -u origin master
+git push -u origin main
 ```
 
-Or, if you'd rather start from an empty GitHub repo: create it on GitHub
-first, then `git remote add origin ...` and `git push -u origin master` from
-this extracted directory.
+Create the GitHub repo first, as **completely empty** — do not let GitHub
+auto-initialize it with a README/license/.gitignore. If it's not empty
+(auto-initialized, or you already pushed something else to it), `git push`
+will be rejected because the two histories don't share a common ancestor;
+either delete and recreate the repo empty, or `git push -u origin main --force`
+if you're sure overwriting it is what you want.
