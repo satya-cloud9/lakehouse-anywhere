@@ -1,5 +1,48 @@
 # Architecture notes
 
+## Why this runs the same on any cloud's Linux box
+
+"Deploy this on any cloud" splits into two very different questions
+depending on which layer you mean, and it's worth being precise about
+which one this repo actually solves.
+
+**Below the Kubernetes API — provisioning the VM and its tooling.** This
+was already accidentally cloud-agnostic by construction, because nothing
+here calls a real cloud's API: floci and kind stand in for AWS/EKS, so
+the only things that vary across "which cloud is this box on" are the
+OS's package manager and CPU architecture — not the cloud provider
+itself. `scripts/01-install-deps.sh` used to assume Ubuntu/apt/amd64
+directly, which was the one place that leaked a specific provider's
+default image into what should've been provider-agnostic. It now
+detects the package manager (apt/dnf/yum) and architecture (amd64/arm64)
+at runtime, so the identical script runs unmodified whether the box is
+an AWS EC2 Ubuntu instance, a DigitalOcean Ubuntu/Debian droplet, an
+Oracle Cloud Ampere (ARM) instance, a Rocky/Alma/RHEL box, or bare metal.
+Docker's, helm's, and OpenTofu's own install scripts already do their
+own OS/arch detection internally — the fix only needed to touch the
+`kind`/`kubectl` direct-binary-download URLs and the base-package
+install commands, which were the two places hardcoded to
+`apt-get`/`-amd64`.
+
+**Above the Kubernetes API — Helm charts, K8s manifests, Kestra flows,
+Terraform against floci.** This layer was already fully cloud-agnostic
+too, but for a different reason: it never talks to a specific cloud at
+all, only to the Kubernetes API (kind today, a real cluster later) and
+to floci. This is also *why* it will need real work later, not none:
+the day this points at a real managed Kubernetes service instead of
+kind, "any cloud" stops being free. Real EKS vs. GKE vs. AKS each need
+their own distinct Terraform resources to provision the cluster itself
+(`aws_eks_cluster` vs. `google_container_cluster` vs.
+`azurerm_kubernetes_cluster` — genuinely different APIs, not a config
+difference), and that step doesn't unify across providers the way the
+Helm/K8s-manifest layer above it does. The standard way production
+setups handle this isn't one universal script — it's a small
+provider-specific Terraform module for "provision compute + cluster"
+per cloud, with everything above that line (Helm values, K8s manifests,
+Kestra flows) staying identical regardless of which one provisioned it.
+That's a deliberate later step (see "Why not simulate EKS itself"
+below), not something this repo tries to solve today.
+
 ## Why LocalStack got swapped for floci
 
 This repo originally ran LocalStack for the AWS control-plane emulation.

@@ -17,15 +17,21 @@ echo ""
 if [ -f /etc/os-release ]; then
   . /etc/os-release
   echo "OS: $PRETTY_NAME"
-  if [ "${ID:-}" = "ubuntu" ]; then
-    case "${VERSION_ID:-}" in
-      22.04) pass "Ubuntu 22.04 — this is what the scripts were written against." ;;
-      24.04|26.04) warn "Ubuntu ${VERSION_ID} — scripts should work but were written against 22.04. Report back anything that looks package-related." ;;
-      *) warn "Ubuntu ${VERSION_ID} — untested version. Proceed, but flag any apt/package issues." ;;
-    esac
-  else
-    warn "Non-Ubuntu distro (${ID:-unknown}) — scripts assume apt. You'll need to adapt scripts/01-install-deps.sh for your package manager."
-  fi
+  case "${ID:-}" in
+    ubuntu)
+      case "${VERSION_ID:-}" in
+        22.04) pass "Ubuntu 22.04 — this is what the scripts were originally written against." ;;
+        *) pass "Ubuntu ${VERSION_ID} — scripts/01-install-deps.sh detects apt automatically, should work fine." ;;
+      esac
+      ;;
+    debian) pass "Debian — scripts/01-install-deps.sh detects apt automatically." ;;
+    fedora|rhel|rocky|almalinux|centos)
+      pass "${PRETTY_NAME} — scripts/01-install-deps.sh detects dnf/yum automatically."
+      ;;
+    *)
+      warn "Unrecognized distro (${ID:-unknown}) — scripts/01-install-deps.sh only knows apt/dnf/yum. It will exit with a clear error rather than silently doing the wrong thing if yours isn't one of those."
+      ;;
+  esac
 else
   warn "Could not detect OS (no /etc/os-release)."
 fi

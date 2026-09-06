@@ -54,8 +54,15 @@ are built:
 ## Sizing
 
 Everything running concurrently needs roughly **7-8 vCPU / 13-15 GB RAM** in
-requests. This repo assumes a **16 GB RAM / 8 vCPU** box running **Ubuntu
-22.04 LTS**. If you're on less, see "Trimming the footprint" below.
+requests. This repo targets a **16 GB RAM / 8 vCPU** Linux box — originally
+written against Ubuntu 22.04 LTS, but `scripts/01-install-deps.sh` now
+detects your package manager (apt/dnf/yum) and CPU architecture (amd64/
+arm64) at runtime, so the same scripts run unmodified on Debian, Fedora,
+RHEL/Rocky/Alma, and on ARM64 hosts (e.g. Oracle Cloud's Ampere instances) —
+see `docs/architecture.md` for why this was already close to cloud-agnostic
+by design, and what the one real remaining gap is (pointing this at a real
+managed Kubernetes service later, instead of `kind`). If you're on less
+than 16GB, see "Trimming the footprint" below.
 
 ## How this is meant to be run
 
