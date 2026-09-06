@@ -10,7 +10,7 @@ fail() { echo "  [FAIL] $1"; HARD_FAIL=1; }
 
 HARD_FAIL=0
 
-echo "=== lakehouse-on-eks preflight ==="
+echo "=== lakehouse-anywhere preflight ==="
 echo ""
 
 # --- OS ---

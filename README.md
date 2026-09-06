@@ -1,4 +1,4 @@
-# lakehouse-on-eks
+# lakehouse-anywhere
 
 A build/test rig for a lakehouse stack — Terraform, Kestra, Iceberg, Trino,
 and observability — organized around a formal **provider contract** so the
