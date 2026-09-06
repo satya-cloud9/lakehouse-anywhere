@@ -1,0 +1,24 @@
+services:
+  floci-gcp:
+    image: floci/floci-gcp:latest   # pin a version once this has been run once
+    container_name: lakehouse-floci-gcp
+    ports:
+      - "4588:4588"   # all 25 emulated GCP services, one endpoint -- see https://floci.io/gcp/
+    environment:
+      - FLOCI_STORAGE_MODE=hybrid
+      - FLOCI_STORAGE_PERSISTENT_PATH=/app/data
+    volumes:
+      - "floci-gcp-data:/app/data"
+    healthcheck:
+      # Assumes floci-gcp shares floci's /_localstack/health convention for
+      # LocalStack drop-in compatibility -- unconfirmed for this sibling
+      # project specifically. If this healthcheck never passes, check
+      # `docker compose -f docker-compose.floci-gcp.yml logs` for the real
+      # path and fix it here and in scripts/02-start-emulator.sh together.
+      test: ["CMD", "curl", "-f", "http://localhost:4588/_localstack/health"]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+
+volumes:
+  floci-gcp-data:

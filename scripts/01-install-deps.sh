@@ -153,4 +153,4 @@ tofu version || true
 awslocal --version 2>/dev/null || echo "awslocal: check 'pip3 show awscli-local' if this didn't print"
 
 echo ""
-echo "If this is the first install of Docker, run 'newgrp docker' (or log out/in) before continuing to 'make floci-up'."
+echo "If this is the first install of Docker, run 'newgrp docker' (or log out/in) before continuing to 'make emulator-up'."

@@ -1,5 +1,10 @@
 # Chart: trinodb/trino (https://trinodb.github.io/charts/) — repo: https://trinodb.github.io/charts
-# helm install trino trino/trino -n data-plane -f helm-values/trino-values.yaml
+# Applied via terraform/tenants/_template/trino.tf as one values source
+# among several -- this file holds only what's identical across every
+# tenant (sizing, image, access control). The Iceberg catalog block
+# (which points at this tenant's Nessie namespace and storage prefix) is
+# generated per-tenant in trino.tf and layered on top, since a tenant_id
+# has to be interpolated into it.
 #
 # Single coordinator + single worker — enough to prove the pipeline works,
 # not a performance configuration. Bump `worker.replicas` and the JVM/query
@@ -41,24 +46,9 @@ worker:
       cpu: "1"
       memory: 2Gi
 
-# --- Iceberg catalog ---
-# hive.s3.* config authenticates to MinIO (the data plane). The glue.*
-# config points the metadata catalog lookups at floci instead of real
-# AWS Glue — AWS_EMULATOR_HOST below must resolve from inside the kind
-# cluster; scripts/05-deploy-stack.sh rewrites it to floci's reachable
-# address (the Docker bridge IP, since "localhost" inside a pod means the
-# pod itself, not the host — see the networking note in that script).
-additionalCatalogs:
-  iceberg: |
-    connector.name=iceberg
-    iceberg.catalog.type=glue
-    hive.metastore.glue.endpoint-url=http://AWS_EMULATOR_HOST:4566
-    hive.s3.aws-access-key=minioadmin
-    hive.s3.aws-secret-key=minioadmin
-    hive.s3.endpoint=http://minio.data-plane.svc.cluster.local:9000
-    hive.s3.path-style-access=true
-    hive.s3.ssl.enabled=false
-    iceberg.file-format=PARQUET
+# Iceberg catalog config is generated per-tenant by trino.tf (needs this
+# tenant's namespace and storage prefix interpolated in) -- see that
+# file's `iceberg_catalog_properties` local.
 
 accessControl:
   type: allow-all

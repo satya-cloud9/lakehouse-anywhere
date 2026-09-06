@@ -1,5 +1,5 @@
 resource "aws_kms_key" "lakehouse" {
-  description             = "Encrypts the Iceberg warehouse bucket and Kestra secrets"
+  description             = "Encrypts the parity S3 bucket and stands in for the key real Kestra secrets would use"
   deletion_window_in_days = 7
   enable_key_rotation     = true
 

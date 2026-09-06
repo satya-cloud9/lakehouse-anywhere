@@ -1,10 +1,19 @@
 # IAM roles for Trino and Kestra, written in the IRSA (IAM Roles for Service
-# Accounts) shape you'd use on real EKS — a role trusted by the cluster's
+# Accounts) shape you'd use on real EKS -- a role trusted by the cluster's
 # OIDC provider, assumed by a matching Kubernetes ServiceAccount. Under
-# LocalStack there is no real OIDC provider or STS enforcement, so this
-# mainly validates the policy documents and role/policy wiring; the actual
-# local Trino/Kestra pods authenticate to MinIO with static credentials
-# instead (see helm-values/*.yaml). Swapping to real IRSA is a real-AWS step.
+# floci there is no real OIDC provider or STS enforcement, so this mainly
+# validates the policy documents and role/policy wiring; the actual local
+# Trino/Kestra pods authenticate to MinIO with static credentials instead
+# (see terraform/platform and terraform/tenants). Swapping to real IRSA is
+# a real-AWS step.
+#
+# These role ARNs are extra outputs beyond the four in the provider
+# contract (see terraform/providers/CONTRACT.md) -- every provider exposes
+# whatever its own workload_identity_mechanism actually needs (an IAM role
+# ARN here, a GCP service-account email in providers/gcp, an Azure managed
+# identity client ID in providers/azure, a Secret name for bare metal).
+# terraform/tenants picks the right one to wire up based on the
+# workload_identity_mechanism string each provider hands back.
 
 data "aws_iam_policy_document" "lakehouse_data_access" {
   statement {
@@ -17,26 +26,9 @@ data "aws_iam_policy_document" "lakehouse_data_access" {
       "s3:ListBucket",
     ]
     resources = [
-      aws_s3_bucket.iceberg_warehouse.arn,
-      "${aws_s3_bucket.iceberg_warehouse.arn}/*",
+      aws_s3_bucket.parity.arn,
+      "${aws_s3_bucket.parity.arn}/*",
     ]
-  }
-
-  statement {
-    sid    = "GlueCatalog"
-    effect = "Allow"
-    actions = [
-      "glue:GetDatabase",
-      "glue:GetDatabases",
-      "glue:CreateTable",
-      "glue:UpdateTable",
-      "glue:GetTable",
-      "glue:GetTables",
-      "glue:DeleteTable",
-      "glue:GetPartitions",
-      "glue:BatchCreatePartition",
-    ]
-    resources = ["*"]
   }
 
   statement {
@@ -64,7 +56,7 @@ data "aws_iam_policy_document" "trino_trust" {
 
     principals {
       type        = "Service"
-      identifiers = ["eks.amazonaws.com"] # placeholder trust — replace with the real OIDC provider ARN/condition once pointed at real EKS
+      identifiers = ["eks.amazonaws.com"] # placeholder trust -- replace with the real OIDC provider ARN/condition once pointed at real EKS
     }
   }
 }

@@ -1,126 +1,230 @@
 # Architecture notes
 
-## Why this runs the same on any cloud's Linux box
+A living reference diagram of everything in this document — the
+provider/platform/tenant layering, cross-tenant data sharing, and where
+the Shared OLTP Service sits — is published at:
+https://claude.ai/code/artifact/609184c7-1be9-4aa7-a001-0141d95fc3c0
 
-"Deploy this on any cloud" splits into two very different questions
-depending on which layer you mean, and it's worth being precise about
-which one this repo actually solves.
+## The provider contract
 
-**Below the Kubernetes API — provisioning the VM and its tooling.** This
-was already accidentally cloud-agnostic by construction, because nothing
-here calls a real cloud's API: floci and kind stand in for AWS/EKS, so
-the only things that vary across "which cloud is this box on" are the
-OS's package manager and CPU architecture — not the cloud provider
-itself. `scripts/01-install-deps.sh` used to assume Ubuntu/apt/amd64
-directly, which was the one place that leaked a specific provider's
-default image into what should've been provider-agnostic. It now
-detects the package manager (apt/dnf/yum) and architecture (amd64/arm64)
-at runtime, so the identical script runs unmodified whether the box is
-an AWS EC2 Ubuntu instance, a DigitalOcean Ubuntu/Debian droplet, an
-Oracle Cloud Ampere (ARM) instance, a Rocky/Alma/RHEL box, or bare metal.
-Docker's, helm's, and OpenTofu's own install scripts already do their
-own OS/arch detection internally — the fix only needed to touch the
-`kind`/`kubectl` direct-binary-download URLs and the base-package
-install commands, which were the two places hardcoded to
-`apt-get`/`-amd64`.
+`terraform/providers/<name>/` modules are the only place cloud-specific
+Terraform lives. Each one does exactly one job — turn "a region on this
+provider" into a working Kubernetes cluster — and hands back exactly four
+outputs: `kubeconfig_path`, `node_pool_refs`, `workload_identity_mechanism`,
+`storage_class_name`. Nothing in `terraform/platform/` or
+`terraform/tenants/` reads anything else from a provider module or
+branches on which provider produced these values. The full contract,
+rationale for exactly these four, and what's deliberately excluded lives
+in `terraform/providers/CONTRACT.md`.
 
-**Above the Kubernetes API — Helm charts, K8s manifests, Kestra flows,
-Terraform against floci.** This layer was already fully cloud-agnostic
-too, but for a different reason: it never talks to a specific cloud at
-all, only to the Kubernetes API (kind today, a real cluster later) and
-to floci. This is also *why* it will need real work later, not none:
-the day this points at a real managed Kubernetes service instead of
-kind, "any cloud" stops being free. Real EKS vs. GKE vs. AKS each need
-their own distinct Terraform resources to provision the cluster itself
-(`aws_eks_cluster` vs. `google_container_cluster` vs.
-`azurerm_kubernetes_cluster` — genuinely different APIs, not a config
-difference), and that step doesn't unify across providers the way the
-Helm/K8s-manifest layer above it does. The standard way production
-setups handle this isn't one universal script — it's a small
-provider-specific Terraform module for "provision compute + cluster"
-per cloud, with everything above that line (Helm values, K8s manifests,
-Kestra flows) staying identical regardless of which one provisioned it.
-That's a deliberate later step (see "Why not simulate EKS itself"
-below), not something this repo tries to solve today.
+This is the mechanism behind "deploy this on any cloud provider": adding
+GCP or Azure support later means writing one new module that satisfies
+this contract, not touching the shared platform layer or any tenant's
+Terraform. The inverse also holds — the platform and tenant layers were
+written once, against the contract, and never needed to change across
+four very different backing implementations (real k3s-over-SSH, and three
+different cloud-emulator families).
 
-## Why LocalStack got swapped for floci
+### Real provider vs. contract-test double
 
-This repo originally ran LocalStack for the AWS control-plane emulation.
-LocalStack's free community image was sunset on March 23, 2026 — pulling
-`localstack/localstack:latest` now requires creating an account and an auth
-token, and LocalStack archived the old open-source GitHub repos in the
-process. floci is a newer MIT-licensed alternative that's wire-compatible
-on the same port (4566) and the same `/_localstack/health` check, so the
-swap didn't touch anything above the emulator layer — just
-`docker-compose.floci.yml`, the container name, and the
-`aws_emulator_endpoint` Terraform variable (previously `localstack_endpoint`).
-It also has a much smaller footprint (~13 MiB idle, ~24ms startup vs
-LocalStack's JVM-based ~250 MiB+/several seconds), which matters on our
-16GB budget. The tradeoff: floci is a much younger, less battle-tested
-project — worth watching for rough edges as we actually run this.
+Only `baremetal/` provisions real infrastructure — it installs k3s over
+SSH onto the box you point it at. `aws/`, `gcp/`, and `azure/` are
+**contract-test doubles**, each backed by a member of the
+[floci](https://floci.io) emulator family (floci for AWS on port 4566,
+floci-gcp on port 4588, floci-az on port 4577 — all MIT-licensed, no auth
+token, wire-compatible with their respective SDKs). A contract-test double
+proves two things for free, before you own a single real cloud account:
+that the Terraform HCL is valid against that cloud's real API shape, and
+that the four-output contract holds identically no matter which provider
+produced it. It does *not* prove real EKS/GKE/AKS runtime behavior — the
+actual storage-class CSI driver, the real load-balancer controller,
+IRSA/Workload-Identity actually completing a token exchange against real
+STS/Entra ID. Budget one real pass per cloud against the genuine managed
+service before calling any of it production-trusted. `aws/cluster.tf`
+also deliberately uses a `null_resource` + the `kind` CLI directly rather
+than an unverified community Terraform provider for kind, to keep the one
+piece of this repo that *is* exercised (kind itself) on solid ground.
 
-## Why MinIO *and* floci, not just one
+## Why bare metal is the first real target
 
-floci has its own S3 implementation, so in principle it alone could serve
-as both the AWS control plane and the S3 data plane. In practice, splitting
-them — floci for control-plane APIs (IAM/STS/Glue/KMS/EC2), MinIO for the
-actual object storage Trino reads and writes — is the pattern most local
-Iceberg lakehouse setups converge on, because:
+The near-term hardware is a single mini PC (Ryzen 7 8745HS / 32GB DDR5 /
+1TB NVMe) — plenty for the platform layer plus a tenant workspace at the
+`pool` isolation tier, with headroom to add a second tenant or trial the
+`node_group`/`dedicated` tiers once there's more than one node. Real
+AWS/GCP/Azure get added later, specifically for portability and disaster
+recovery (being able to stand the same stack up somewhere else), not for
+running tenants simultaneously split across providers — that's a
+meaningfully more complex problem (cross-provider networking, data
+gravity, consistent identity) this repo doesn't take on. Because the
+provider contract already exists, "add AWS later" is additive: a new
+`terraform/providers/aws` apply, feeding the same `terraform/platform` and
+`terraform/tenants` modules that already run against bare metal today.
 
-- MinIO is a purpose-built, fast S3-compatible object store; floci's S3
-  emulation is fine for control-plane-adjacent operations (bucket
-  creation, policy checks) but isn't the one built for the volume of small
-  PUT/GET calls Iceberg's manifest-file-heavy layout generates.
-- It mirrors how many real deployments already separate "the S3 API my
-  IaC creates buckets against" from "the S3-compatible endpoint my data
-  actually lives behind" when there's an on-prem or hybrid component.
+## Multi-tenancy: the workspace boundary
 
-## Why not simulate EKS itself
+Production multi-tenant architecture is respected from the start rather
+than bolted on: each tenant gets its own **workspace** — a Kubernetes
+namespace combining that tenant's Trino, Postgres (pool schema or
+dedicated instance), object storage, and a Grafana folder — wrapped in an
+isolation boundary. `terraform/tenants/_template/` is the reusable module;
+`terraform/tenants/tenant-a/` is a thin root instantiation of it. Adding a
+tenant is a new instantiation directory, never a copy of `_template`
+itself or an edit to it.
 
-LocalStack could emulate the EKS *API* (Pro tier only), but under the hood
-that emulation was just a `kind` cluster anyway — it didn't run a second,
-more-real Kubernetes control plane for it. floci doesn't offer EKS
-emulation as a distinct product tier at all — EKS is just one of its 85
-in-process/Docker-backed services, but the same reasoning applies: pointing
-Terraform's `kubernetes`/`helm` providers directly at a `kind` cluster gets
-you the same practical result (a real Kubernetes API to apply manifests
-against) without an extra layer of indirection to debug through when
-something goes wrong.
+The isolation boundary is a Kubernetes `NetworkPolicy` default-deny with
+explicit allows for: same namespace, the shared `platform` namespace
+(Kestra, Nessie, the Shared OLTP Service), and the `observability`
+namespace. Combined with per-namespace `ResourceQuota`s, this is what
+keeps "isolation tier" a variable rather than a forked codebase.
 
-The tradeoff: none of the EKS-specific control-plane behavior (the AWS
-IAM ↔ Kubernetes RBAC mapping via `aws-auth`/access entries, EKS managed
-node group lifecycle, the EKS add-ons system) gets exercised locally.
-Moving to real EKS later means adding an actual `aws_eks_cluster` +
-node group + IRSA-OIDC-provider Terraform layer that doesn't exist yet in
-this repo — everything here assumes a Kubernetes API is already there to
-target.
+### Isolation tiers
 
-## Why Glue-via-floci for the Iceberg catalog, not a REST catalog
+`isolation_tier` (`pool` | `node_group` | `dedicated`) is a plain
+Terraform variable on the tenant module, not a different code path:
 
-Trino's Iceberg connector supports several catalog backends (Glue, Hive
-Metastore, a REST catalog like Nessie/Polaris, JDBC). Glue was picked
-here specifically because it's the one that carries over to real AWS
-with the least change — swap the floci endpoint override for nothing
-(real Glue needs no endpoint override) and real IAM credentials, and the
-same `additionalCatalogs.iceberg` block should work. A REST catalog
-(Nessie/Polaris) gets you table branching/versioning semantics Glue
-doesn't have, at the cost of another service to run and a bigger jump if
-you eventually do move to real AWS Glue.
+- **pool** — the default, and the only tier meaningful on a single-node
+  cluster. The tenant's Postgres-backed data lives as its own schema
+  inside the shared `tenant-pool-postgres` instance in the platform
+  layer (`terraform/platform/tenant-pool-postgres.tf`); Trino, MinIO,
+  and everything else still run as the tenant's own pods in its own
+  namespace.
+- **node_group** — same as `pool`, but the tenant's pods get scheduled
+  onto a dedicated node pool via node selectors/taints. Needs real
+  additional node capacity to mean anything physically.
+- **dedicated** — the tenant gets its own Postgres instance instead of a
+  pool schema, in addition to node-level separation.
+
+Implemented via `count = var.isolation_tier == "pool" ? 1 : 0` (and its
+inverse) in `terraform/tenants/_template/postgres.tf` — toggling which
+resources get created, not which module gets called.
+
+## The platform layer: what's shared, and why
+
+`terraform/platform/` is the one thing every tenant depends on and no
+tenant owns: Nessie (the Iceberg REST catalog, with its own dedicated
+Postgres for persistence — the in-memory default loses state on
+restart), Kestra (still standalone mode; see below), the tenant-pool
+Postgres, the Shared OLTP Service, and observability (kube-prometheus-stack,
+Loki, Tempo).
+
+### Why Nessie instead of Glue-via-floci
+
+The original design used AWS Glue (via floci) as the Iceberg catalog,
+specifically because it carried over to real AWS with the least change.
+That stopped making sense the moment "any cloud provider" became a real
+requirement — Glue is AWS-only, full stop, so a GCP or Azure tenant would
+have needed a second catalog implementation and code above the provider
+contract that branches on which cloud it's running on. Nessie is a REST
+catalog: one implementation, reachable identically regardless of which
+provider's Kubernetes cluster it's running on, and it happens to add
+table branching/versioning semantics Glue never had. The cost is one more
+service to run and operate, accepted specifically for the cross-provider
+requirement.
+
+### Why Kestra stays in standalone mode for now
+
+Kestra 2.0 supports a Controller/Worker-Group split, which is the right
+shape once there's a reason to isolate *execution* per tenant (a tenant's
+flows shouldn't be able to starve another's, or you want per-tenant worker
+scaling). On a single mini PC there's no such pressure yet — standalone
+mode is simpler to operate and this is a deployment-topology decision, not
+a flow-authoring one, so nothing about how flows are written changes when
+that split eventually happens.
+
+### Cross-tenant data sharing and the Shared OLTP Service
+
+Two different sharing problems came up, and they're handled differently:
+
+- **Iceberg tables one tenant wants to share with another** go through
+  Nessie's own REST-catalog grants — no separate mechanism needed, since
+  the catalog is already outside any tenant's boundary.
+- **Postgres-resident data that's genuinely cross-tenant** — the case
+  Iceberg historically handles badly here (row-level concurrent commits)
+  and where plain Postgres was already the fallback — lives in the
+  **Shared OLTP Service**, in the platform layer, *never* inside a
+  tenant's namespace even when one tenant "owns" one side of the
+  relationship. It uses Row-Level Security with a `current_setting('app.tenant_id', true)`
+  policy plus a `shared_with` array column (example bootstrap SQL is in
+  `terraform/platform/shared-oltp.tf`'s ConfigMap) so isolation is
+  enforced at the query layer even though the data physically lives in
+  one shared instance. This is a deliberate exception to "everything
+  tenant-scoped lives inside the tenant's namespace" — the alternative
+  (replicating shared rows into every tenant that needs them) trades a
+  RLS policy for a distributed-consistency problem, which is worse.
+
+## Cross-stage plumbing: how state stays separate but data still flows
+
+Terraform state is separated per provider instance / platform / tenant
+from the start, specifically so a new provider or a second tenant never
+means migrating shared state. What crosses those boundaries is a handful
+of plain values (a kubeconfig path, a catalog URI, a postgres host), not
+shared state — carried via `tofu output -json` captured into
+`terraform/generated/<stage>.tfvars.json` and passed forward with explicit
+`-var-file` flags (see `scripts/03-apply-provider.sh` through
+`scripts/05-apply-tenant.sh`). This is deliberately *not* Terraform's
+same-directory `.auto.tfvars.json` auto-loading — these files live outside
+each stage's own directory, so auto-loading would silently do nothing.
+
+One real Kubernetes wrinkle this surfaces: a Job in a tenant's namespace
+can't read a Secret that lives in the `platform` namespace via a pod's
+`secretKeyRef` (that's namespace-scoped). The pool-tier schema-creation
+Job in `terraform/tenants/_template/postgres.tf` works around this with a
+Terraform `data "kubernetes_secret_v1"` data source instead — that reads
+through the Kubernetes API at plan/apply time (not namespace-scoped the
+way a pod's own secret mount is) and passes the value in as a literal env
+value.
 
 ## Known gaps / things not yet exercised
 
 - No ingress controller / TLS — everything is reached via
   `kubectl port-forward` (see `make status`). Fine for a single-operator
-  test rig, not representative of how you'd expose these UIs on real EKS
-  (ALB Ingress Controller + ACM, typically).
-- No autoscaling (HPA/cluster autoscaler) — the whole point of a fixed-size
-  `kind` cluster is a fixed, predictable footprint for this box.
-- IAM policy correctness isn't actually validated — LocalStack Community
-  accepts `terraform apply` for IAM resources without enforcing the policy
-  document the way real AWS would. Treat the Terraform in this repo as
-  "does the resource graph make sense," not "is this policy correct."
+  test rig, not representative of how you'd expose these UIs in
+  production (a real ingress controller + cert-manager, typically).
+- No autoscaling (HPA/cluster autoscaler) — bare metal is a fixed-size
+  box by nature; this becomes relevant once a cloud provider is added
+  for real.
+- IAM/identity policy correctness isn't validated against the emulator
+  family the way real AWS/GCP/Azure would enforce it — treat the
+  Terraform in `providers/aws|gcp|azure` as "does the resource graph and
+  contract shape make sense," not "is this policy correct in production."
+  `providers/gcp` and `providers/azure` also carry explicit comments
+  flagging specific unverified mechanics (floci-gcp/floci-az's exact
+  kubeconfig-retrieval and health-check-path behavior, and azurerm's
+  endpoint-override mechanism for pointing at floci-az) — verify these
+  empirically on first real `tofu apply`, don't assume the comments are
+  fact.
+- Trino resource-groups (per-tenant query-level quotas, beyond the
+  namespace-level `ResourceQuota`) aren't wired up yet — flagged as a
+  known gap in `terraform/tenants/_template/trino.tf`.
 - Trino/Kestra metrics aren't wired into Prometheus yet (see the note at
-  the bottom of `helm-values/kube-prometheus-stack-values.yaml`) — logs via
-  Loki and dashboards via Grafana work out of the box; metrics need a
-  ServiceMonitor added per component once the base stack is confirmed
-  running.
+  the bottom of `helm-values/kube-prometheus-stack-values.yaml`) — logs
+  via Loki and dashboards via Grafana (including per-tenant folder
+  discovery via the sidecar's `folderAnnotation`) work out of the box;
+  metrics need a ServiceMonitor added per component once the base stack
+  is confirmed running.
+
+## Why MinIO *and* floci/floci-gcp/floci-az, not just one
+
+Each emulator in the floci family has its own S3-ish object storage, so in
+principle any one of them alone could serve as both the cloud
+control-plane emulator and the data plane. Splitting them — the emulator
+for control-plane APIs (IAM/STS/KMS/networking), MinIO for the actual
+object storage Trino reads and writes — is the pattern most local Iceberg
+lakehouse setups converge on: MinIO is a purpose-built, fast S3-compatible
+store, while the emulators' own S3-ish implementations are fine for
+control-plane-adjacent operations but aren't built for the volume of small
+PUT/GET calls Iceberg's manifest-file-heavy layout generates. On bare
+metal, MinIO is also just real storage, not an emulation of anything —
+the split matters even more there than on the cloud contract-test doubles.
+
+## Provisioning-tooling portability (below the Kubernetes API)
+
+Separately from the provider-contract question above the Kubernetes API,
+`scripts/01-install-deps.sh` detects the OS package manager (apt/dnf/yum)
+and CPU architecture (amd64/arm64) at runtime rather than assuming a
+specific distro, so the same install script runs unmodified whether it's
+setting up the bare-metal mini PC, a cloud VM used to test one of the
+contract-test-double providers, or an ARM box. This is a genuinely
+separate concern from the provider contract itself — it's about the tool
+installation step that happens once per machine, not about which cloud's
+API anything talks to.

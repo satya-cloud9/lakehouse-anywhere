@@ -26,8 +26,8 @@ prometheus:
             requests:
               storage: 8Gi
     # Auto-discover ServiceMonitors/PodMonitors in any namespace, not just
-    # the release namespace — Trino/Kestra ServiceMonitors live in
-    # data-plane.
+    # the release namespace — Trino's ServiceMonitor lives in each tenant's
+    # own namespace (e.g. tenant-a) and Kestra's lives in platform.
     serviceMonitorSelectorNilUsesHelmValues: false
     podMonitorSelectorNilUsesHelmValues: false
 
@@ -45,8 +45,8 @@ grafana:
     enabled: true
     size: 2Gi
   # Wire in Loki and Tempo as datasources automatically once they're
-  # installed (they're installed right after this chart in
-  # scripts/05-deploy-stack.sh).
+  # installed (all three -- kube-prometheus-stack, Loki, Tempo -- are
+  # installed together by terraform/platform/observability.tf).
   additionalDataSources:
     - name: Loki
       type: loki
@@ -56,6 +56,19 @@ grafana:
       type: tempo
       url: http://tempo.observability.svc.cluster.local:3100
       access: proxy
+  # Each tenant's namespace carries a labeled ConfigMap dashboard (see
+  # terraform/tenants/_template/grafana.tf) rather than a per-tenant Grafana
+  # instance — this sidecar has to search every namespace, not just its own,
+  # to pick those up. This is the mechanism behind the "Grafana (tenant
+  # folder)" box on the tenancy-architecture reference page: one shared
+  # Grafana, a folder per tenant.
+  sidecar:
+    dashboards:
+      enabled: true
+      searchNamespace: ALL
+      folderAnnotation: lakehouse.io/tenant
+      provider:
+        foldersFromFilesStructure: true
 
 # kube-state-metrics and node-exporter are on by default — leave them on,
 # they're the lightest pieces of this chart (~50-100Mi each) and give you

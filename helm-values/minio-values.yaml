@@ -1,9 +1,11 @@
 # Chart: minio/minio (https://charts.min.io/)  — repo: https://charts.min.io/
-# helm install minio minio/minio -n data-plane -f helm-values/minio-values.yaml
+# Deployed per-tenant via terraform/tenants/_template/minio.tf's helm_release
+# (namespace = that tenant's, e.g. tenant-a) -- this file is the shared
+# values base every tenant's release uses.
 #
-# MinIO is the S3-compatible data plane for Iceberg files (see README's
-# "How the AWS layer is simulated"). Standalone single-drive mode — fine for
-# a test rig, not how you'd run MinIO in production.
+# MinIO is the S3-compatible object store for that tenant's Iceberg files
+# (see docs/architecture.md's "Why MinIO *and* floci..." section). Standalone
+# single-drive mode — fine for a test rig, not how you'd run MinIO in production.
 
 mode: standalone
 

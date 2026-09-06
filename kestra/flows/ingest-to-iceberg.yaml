@@ -1,10 +1,15 @@
 # Example flow proving the end-to-end path: Kestra -> Trino -> Iceberg
-# (Glue Data Catalog via floci for metadata, MinIO for the actual
-# Parquet files). Deliberately minimal — inserts literal sample rows via
-# SQL rather than staging external files, so the first run only has to
-# prove the pipeline wiring, not a real ingestion pattern. Swap the
-# `load_data` task for a `Copy`/`CopyIn` from a staged file (or an
-# upstream source) once this runs cleanly.
+# (Nessie REST catalog for metadata, MinIO for the actual Parquet files).
+# Points at tenant-a's Trino specifically -- Kestra itself is shared
+# (platform namespace), but each flow/task targets one tenant's Trino
+# endpoint, since queries run as/for that tenant. A second tenant means
+# either a copy of this flow with the hostname swapped, or parameterizing
+# the URL via a Kestra input if you want one flow reused across tenants.
+# Deliberately minimal — inserts literal sample rows via SQL rather than
+# staging external files, so the first run only has to prove the pipeline
+# wiring, not a real ingestion pattern. Swap the `load_data` task for a
+# `Copy`/`CopyIn` from a staged file (or an upstream source) once this
+# runs cleanly.
 #
 # PLUGIN CAVEAT: uses io.kestra.plugin.jdbc.trino.Query, from the
 # plugin-jdbc-trino plugin. If Kestra's default image doesn't include it,
@@ -19,13 +24,13 @@ namespace: lakehouse
 tasks:
   - id: create_schema
     type: io.kestra.plugin.jdbc.trino.Query
-    url: jdbc:trino://trino.data-plane.svc.cluster.local:8080/iceberg/default
+    url: jdbc:trino://trino.tenant-a.svc.cluster.local:8080/iceberg/default
     username: kestra
     sql: CREATE SCHEMA IF NOT EXISTS iceberg.default
 
   - id: create_table
     type: io.kestra.plugin.jdbc.trino.Query
-    url: jdbc:trino://trino.data-plane.svc.cluster.local:8080/iceberg/default
+    url: jdbc:trino://trino.tenant-a.svc.cluster.local:8080/iceberg/default
     username: kestra
     sql: |
       CREATE TABLE IF NOT EXISTS iceberg.default.events (
@@ -38,7 +43,7 @@ tasks:
 
   - id: load_data
     type: io.kestra.plugin.jdbc.trino.Query
-    url: jdbc:trino://trino.data-plane.svc.cluster.local:8080/iceberg/default
+    url: jdbc:trino://trino.tenant-a.svc.cluster.local:8080/iceberg/default
     username: kestra
     sql: |
       INSERT INTO iceberg.default.events VALUES
@@ -48,7 +53,7 @@ tasks:
 
   - id: verify_count
     type: io.kestra.plugin.jdbc.trino.Query
-    url: jdbc:trino://trino.data-plane.svc.cluster.local:8080/iceberg/default
+    url: jdbc:trino://trino.tenant-a.svc.cluster.local:8080/iceberg/default
     username: kestra
     sql: SELECT count(*) AS row_count FROM iceberg.default.events
     fetchType: FETCH

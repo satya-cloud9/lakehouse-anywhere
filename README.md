@@ -1,121 +1,157 @@
-# lakehouse-on-eks (local simulator)
+# lakehouse-on-eks
 
-A local build/test rig for a lakehouse stack — Terraform, Kestra, Iceberg, Trino,
-and observability — designed to run entirely on one Linux box via floci +
-`kind`, before any of it touches a real AWS account. The end state (Terraform
-providers, Helm charts, Kestra flows) is written to be as close as practical to
-what you'd point at real AWS/EKS later — floci and kind stand in for AWS
-and EKS, everything above that layer (Trino, Kestra, Iceberg, observability)
-is the same software you'd run in production.
+A build/test rig for a lakehouse stack — Terraform, Kestra, Iceberg, Trino,
+and observability — organized around a formal **provider contract** so the
+same Kubernetes-and-up layer runs unmodified on bare metal, AWS, GCP, or
+Azure, and around a **tenant workspace** module so a production-shaped
+multi-tenant deployment (isolated namespace, own Trino/Postgres/storage/
+Grafana folder per tenant) is the default shape, not an afterthought bolted
+on later. See `docs/architecture.md` for the full reasoning; this file is
+the how-to-run version.
 
-## How the AWS layer is simulated
+## The three-stage structure
 
-There is no single "EKS simulator" here — two separate free/open tools cover
-two separate concerns, which is also how most real local-lakehouse dev setups
-are built:
+```
+terraform/
+  providers/<name>/   one real infra provisioner per cloud -- see providers/CONTRACT.md
+    baremetal/          REAL: installs k3s over SSH onto your own box
+    aws/                 contract-test double: floci + kind
+    gcp/                  contract-test double: floci-gcp
+    azure/                contract-test double: floci-az
+  platform/             ONE shared control-plane layer: Nessie (Iceberg REST
+                          catalog), Kestra (shared, standalone), the Shared
+                          OLTP Service, the tenant-pool Postgres, observability
+  tenants/
+    _template/           reusable module: namespace + NetworkPolicy + Trino +
+                          MinIO + Postgres (pool schema or dedicated instance,
+                          by isolation_tier) + a per-tenant Grafana folder
+    tenant-a/             root instantiation of _template -- adding a tenant
+                          means a new directory like this one, never editing
+                          _template
+```
 
-- **floci** emulates the AWS *control plane*: IAM roles/policies, STS
-  (for IRSA-style role assumption), the Glue Data Catalog (Iceberg table
-  metadata), KMS, and VPC/EC2 resources (so Terraform's plan/apply graph is
-  real and testable). This was originally LocalStack — swapped to floci
-  because LocalStack's free community image was sunset on March 23, 2026 and
-  now requires an account + auth token to pull. floci is MIT-licensed, no
-  auth token ever, wire-compatible on the same port and health-check path,
-  and much lighter (~13 MiB idle vs LocalStack's ~250 MiB+). Neither one
-  enforces IAM policy the way real AWS does — `terraform apply` succeeding
-  here doesn't guarantee the same IAM policy is actually correct against
-  real AWS.
-- **MinIO** is the S3-compatible *data plane* — the actual bytes (Parquet
-  files, Iceberg metadata/manifest files) that Trino reads and writes. floci
-  has an S3 implementation too, but MinIO is faster and more realistic for
-  actual data I/O, so that's the split used here.
-- **`kind`** is the Kubernetes substrate. We do not simulate the EKS control-plane
-  API itself (that's a LocalStack Pro feature and just wraps a kind cluster
-  under the hood anyway) — Terraform's Kubernetes/Helm providers point straight
-  at the kind cluster, exactly as they would point at a real EKS cluster later.
-  Swapping this out for real EKS later should mostly mean changing where the
-  `kubernetes`/`helm` Terraform providers point.
+Each stage is a **separate Terraform state** (separate directory, separate
+`tofu init`/`apply`). A provider module hands back exactly four outputs —
+`kubeconfig_path`, `node_pool_refs`, `workload_identity_mechanism`,
+`storage_class_name` (see `terraform/providers/CONTRACT.md`) — and nothing
+above that line is allowed to read anything else from it or branch on which
+provider produced them. That's what makes adding a new cloud provider later
+mean "write one new module under `terraform/providers/`," not "touch
+`terraform/platform` or `terraform/tenants`."
 
-## Components
+Outputs flow forward via captured JSON var-files, not Terraform's
+same-directory auto-loading (these files live outside each stage's own
+directory, so they're passed explicitly):
 
-| Layer | Component | Notes |
-|---|---|---|
-| AWS control plane | floci | IAM, STS, Glue Data Catalog, KMS, VPC/EC2 |
-| AWS data plane | MinIO | S3-compatible object store for the Iceberg warehouse |
-| Kubernetes | kind | 1 control-plane + 2 worker nodes |
-| Query engine | Trino | Iceberg connector, catalog backed by Glue (via LocalStack) + MinIO |
-| Orchestration | Kestra | standalone server + Postgres backend |
-| Table format | Apache Iceberg | tables written/read through Trino |
-| Metrics | kube-prometheus-stack (Prometheus + Grafana) | |
-| Logs | Loki + Promtail | |
-| Traces | Tempo | |
-| IaC | Terraform (or OpenTofu) | targets floci via endpoint overrides |
+```
+terraform/providers/<p>  --tofu output-->  terraform/generated/<p>.tfvars.json
+                                                    |
+                                                    v  -var-file
+terraform/platform        --tofu output-->  terraform/generated/platform.tfvars.json
+                                                    |
+                                                    v  -var-file (both files)
+terraform/tenants/<name>
+```
+
+## Which provider is "real" today
+
+Only `baremetal/` provisions a real cluster (k3s over SSH). `aws/`, `gcp/`,
+and `azure/` are **contract-test doubles**: they prove the Terraform HCL is
+valid against each cloud's real API shape and prove the four-output
+contract holds identically across providers, using the free/open
+[floci](https://floci.io) emulator family (floci for AWS, floci-gcp,
+floci-az) — no real cloud account needed to validate the plumbing. They do
+not prove real EKS/GKE/AKS runtime behavior (their storage CSI driver, load
+balancer controller, or IRSA/Workload-Identity token exchange against real
+STS/Entra) — budget one real pass per cloud before trusting any of this in
+production. See `terraform/providers/CONTRACT.md` for the full table and
+per-provider caveats.
 
 ## Sizing
 
-Everything running concurrently needs roughly **7-8 vCPU / 13-15 GB RAM** in
-requests. This repo targets a **16 GB RAM / 8 vCPU** Linux box — originally
-written against Ubuntu 22.04 LTS, but `scripts/01-install-deps.sh` now
+Everything running concurrently (platform layer + one tenant) needs
+roughly **7-8 vCPU / 13-15 GB RAM** in requests. The reference target is
+the mini PC in `docs/architecture.md` (Ryzen 7 8745HS / 32GB DDR5) —
+comfortably above that floor, with headroom for a second tenant or the
+node-group/dedicated isolation tiers later. `scripts/01-install-deps.sh`
 detects your package manager (apt/dnf/yum) and CPU architecture (amd64/
-arm64) at runtime, so the same scripts run unmodified on Debian, Fedora,
-RHEL/Rocky/Alma, and on ARM64 hosts (e.g. Oracle Cloud's Ampere instances) —
-see `docs/architecture.md` for why this was already close to cloud-agnostic
-by design, and what the one real remaining gap is (pointing this at a real
-managed Kubernetes service later, instead of `kind`). If you're on less
-than 16GB, see "Trimming the footprint" below.
+arm64) at runtime, so it's not tied to a specific distro or provider's
+default image.
 
 ## How this is meant to be run
 
-This was built in a sandbox that can't reach Docker Hub or Hashicorp's
-servers, so none of it has been run end to end yet — it's a first pass meant
-to be run and iterated on *with you*. Run it phase by phase (not `make up`
-blind on the first pass), and paste back the output of any phase that fails
-or looks wrong. Each phase is independent enough that we can fix one without
-re-running everything before it.
+None of this has been run end-to-end in the sandbox this was written in
+(no Docker Hub / cloud API access there) — it's a first pass meant to be
+run and iterated on *with you*. Run it phase by phase, not `make up` blind
+on the first pass, and paste back the output of any phase that fails.
+Every target takes `PROVIDER` (`baremetal` | `aws` | `gcp` | `azure`,
+default `aws`) and `TENANT` (default `tenant-a`):
 
 ```
-make preflight       # phase 0: check the box meets the sizing assumptions
-make install          # phase 1: install docker, kind, kubectl, helm, tofu, awslocal
-make floci-up          # phase 2: start floci, wait for it to be healthy
-make tf-apply          # phase 3: terraform apply against floci
-make kind-up           # phase 4: create the kind cluster
-make deploy             # phase 5: helm install minio, trino, kestra, observability
-make flows               # phase 6: register the example Kestra flow
-make status               # print all service URLs / port-forward commands
+make preflight                          # phase 0: check the box meets the sizing assumptions
+make install                             # phase 1: install docker, kind, kubectl, helm, tofu
+make emulator-up PROVIDER=aws            # phase 2: start floci (skipped for baremetal)
+make provider-apply PROVIDER=aws         # phase 3: provision the cluster, capture contract outputs
+make platform-apply PROVIDER=aws         # phase 4: Nessie, Kestra, Shared OLTP, observability
+make tenant-apply PROVIDER=aws TENANT=tenant-a   # phase 5: this tenant's Trino/MinIO/Postgres/Grafana
+make flows                               # phase 6: register the example Kestra flow
+make status PROVIDER=aws TENANT=tenant-a # print all service URLs / port-forward commands
 ```
 
-`make down` tears down the kind cluster and stops floci, leaving Terraform
-state and everything in git untouched. `make tf-destroy` additionally tears
-down the Terraform-managed floci resources.
+Or, once you trust a given `PROVIDER`, `make up PROVIDER=baremetal` runs
+phases 0-6 in sequence.
+
+`make teardown` stops the emulator/local state only, leaving every
+Terraform state untouched. `make destroy` additionally runs `tofu destroy`
+at every applied stage (tenant, then platform, then provider) — see
+`scripts/99-teardown.sh`.
+
+## Adding a tenant
+
+Copy `terraform/tenants/tenant-a/` to `terraform/tenants/tenant-b/`, change
+`tenant_id` (and `isolation_tier` if it should differ) in its `main.tf`,
+then `TENANT=tenant-b bash scripts/05-apply-tenant.sh`. Nothing in
+`terraform/platform` or the other tenant's state needs to change — that
+isolation is enforced by the per-namespace NetworkPolicy default-deny plus
+each tenant's own Terraform state.
+
+## Adding a cloud provider
+
+Write a new `terraform/providers/<name>/` module producing the same four
+contract outputs (`terraform/providers/CONTRACT.md` has the exact shape
+and a worked list of what's deliberately *not* in the contract). Nothing
+in `terraform/platform` or `terraform/tenants` changes.
 
 ## Trimming the footprint (8 GB boxes)
 
-If you're testing on something smaller than 16 GB:
-- Skip Loki + Tempo initially (comment them out of `scripts/05-deploy-stack.sh`) —
-  `kubectl logs` covers most early debugging.
-- Cap Trino's JVM heap at 1.5-2 GB in `helm-values/trino-values.yaml`
-  (`config.query.maxMemoryPerNode` / the coordinator/worker JVM `-Xmx`).
+If you're testing on something smaller than the reference target:
+- Skip Loki + Tempo initially (comment them out of `terraform/platform/observability.tf`).
+- Cap Trino's JVM heap at 1.5-2 GB in `helm-values/trino-values.yaml`.
 - Kestra's documented floor is 4 GB / 2 vCPU standalone — don't go below that.
+- Use `isolation_tier = "pool"` (the default) for every tenant until you
+  actually have spare node capacity — `node_group`/`dedicated` only mean
+  something physically once there's more than one node.
 
 ## Repo layout
 
 ```
-scripts/           setup scripts, run in numeric order
-terraform/          AWS resources (VPC, IAM, Glue, KMS, S3) against floci
-kind/                kind cluster topology
-helm-values/     Helm values for MinIO, Trino, Kestra, observability
-k8s/                  plain manifests (namespaces, configmaps) not covered by Helm
-kestra/flows/    example Kestra flow definitions
-trino/catalog/  reference Iceberg catalog properties (also generated as a ConfigMap)
-docs/               architecture notes
+terraform/providers/<name>/   one infra provisioner per cloud (see CONTRACT.md)
+terraform/platform/             shared control-plane: Nessie, Kestra, Shared OLTP, observability
+terraform/tenants/_template/   reusable per-tenant workspace module
+terraform/tenants/<name>/       root instantiation per tenant
+scripts/                              setup scripts, run in numeric order (or via `make`)
+helm-values/                        Helm values for MinIO, Trino, Kestra, observability
+kestra/flows/                      example Kestra flow definitions
+trino/catalog/                    reference Iceberg catalog properties (also generated as a ConfigMap per tenant)
+docs/                                    architecture notes
 ```
 
 ## Getting this onto your GitHub repo
 
 This directory is already a git repo with one commit per phase — extracting
 the tarball is all the "cloning" you need to do; there's nothing further to
-pull. On the cloud box (or wherever you have GitHub auth set up), from
-inside this extracted directory:
+pull. From inside this extracted directory, wherever you have GitHub auth
+set up:
 
 ```
 git branch -m master main
@@ -124,8 +160,7 @@ git push -u origin main
 ```
 
 Create the GitHub repo first, as **completely empty** — do not let GitHub
-auto-initialize it with a README/license/.gitignore. If it's not empty
-(auto-initialized, or you already pushed something else to it), `git push`
-will be rejected because the two histories don't share a common ancestor;
-either delete and recreate the repo empty, or `git push -u origin main --force`
-if you're sure overwriting it is what you want.
+auto-initialize it with a README/license/.gitignore. If it's not empty,
+`git push` will be rejected because the two histories don't share a common
+ancestor; either delete and recreate the repo empty, or
+`git push -u origin main --force` if you're sure overwriting it is what you want.

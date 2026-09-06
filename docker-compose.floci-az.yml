@@ -1,0 +1,22 @@
+services:
+  floci-az:
+    image: floci/floci-az:latest   # pin a version once this has been run once
+    container_name: lakehouse-floci-az
+    ports:
+      - "4577:4577"   # REST services -- see https://floci.io/az/ for the extra AMQP ports
+                       # (Event Hubs 5672, Service Bus 5673, Event Hubs Kafka 9093) if you need those
+    environment:
+      - FLOCI_STORAGE_MODE=hybrid
+      - FLOCI_STORAGE_PERSISTENT_PATH=/app/data
+    volumes:
+      - "floci-az-data:/app/data"
+    healthcheck:
+      # Same caveat as docker-compose.floci-gcp.yml -- unconfirmed whether
+      # floci-az shares this health-check path.
+      test: ["CMD", "curl", "-f", "http://localhost:4577/_localstack/health"]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+
+volumes:
+  floci-az-data:

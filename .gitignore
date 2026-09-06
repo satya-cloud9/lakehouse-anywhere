@@ -8,3 +8,8 @@ crash.log
 kubeconfig
 *.kubeconfig
 .DS_Store
+
+# Captured cross-stage outputs (scripts/03/04-apply-*.sh) -- regenerated
+# on every apply, and can carry secret values (e.g. postgres admin secret
+# names/hosts) through the -var-file chain, so this is state, not source.
+terraform/generated/

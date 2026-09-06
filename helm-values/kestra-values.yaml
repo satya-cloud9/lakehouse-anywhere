@@ -1,8 +1,11 @@
 # Chart: kestra-io/kestra (https://helm.kestra.io) — repo: https://helm.kestra.io
-# helm install kestra kestra/kestra -n data-plane -f helm-values/kestra-values.yaml
+# Applied via terraform/platform/kestra.tf as a helm_release, not run
+# directly — this file is passed in as that release's values.
 #
 # Standalone deployment (webserver + executor + worker + scheduler in one
-# process) against the Postgres deployed by k8s/postgres-kestra.yaml.
+# process) against the Postgres deployed alongside it in kestra.tf. See
+# that file's header comment for the upgrade path to Kestra 2.0's
+# Controller/Worker-Group split once a second provider/cluster exists.
 # Kestra's own documented minimum is 4Gi RAM / 2 vCPU standalone — the
 # resources block below sits right at that floor; raise it if flows are
 # slow to schedule/pick up.
@@ -35,7 +38,7 @@ resources:
 configuration: |
   datasources:
     postgres:
-      url: jdbc:postgresql://kestra-postgres.data-plane.svc.cluster.local:5432/kestra
+      url: jdbc:postgresql://kestra-postgres.platform.svc.cluster.local:5432/kestra
       driverClassName: org.postgresql.Driver
       username: kestra
       password: kestra

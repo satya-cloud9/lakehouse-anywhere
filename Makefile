@@ -1,6 +1,16 @@
 SHELL := /bin/bash
 
-.PHONY: preflight install floci-up kind-up tf-apply tf-destroy deploy flows down clean status
+# Which provider/tenant every target below acts on. Override on the
+# command line, e.g.:
+#   make emulator-up PROVIDER=gcp
+#   make provider-apply platform-apply tenant-apply PROVIDER=baremetal
+PROVIDER ?= aws
+TENANT ?= tenant-a
+export PROVIDER
+export TENANT
+
+.PHONY: preflight install emulator-up provider-apply platform-apply tenant-apply \
+        flows status teardown destroy up
 
 preflight:
 	bash scripts/00-preflight.sh
@@ -8,17 +18,17 @@ preflight:
 install:
 	bash scripts/01-install-deps.sh
 
-floci-up:
-	bash scripts/02-start-floci.sh
+emulator-up:
+	bash scripts/02-start-emulator.sh
 
-tf-apply:
-	bash scripts/03-terraform-apply.sh
+provider-apply:
+	bash scripts/03-apply-provider.sh
 
-kind-up:
-	bash scripts/04-create-kind-cluster.sh
+platform-apply:
+	bash scripts/04-apply-platform.sh
 
-deploy:
-	bash scripts/05-deploy-stack.sh
+tenant-apply:
+	bash scripts/05-apply-tenant.sh
 
 flows:
 	bash scripts/06-register-flows.sh
@@ -26,14 +36,19 @@ flows:
 status:
 	bash scripts/status.sh
 
-tf-destroy:
-	cd terraform && terraform destroy -auto-approve
-
-down:
+# Stops the emulator/local state only -- leaves all Terraform state alone.
+teardown:
 	bash scripts/99-teardown.sh
 
-# Full run, phase by phase. Intended to be run interactively the first time
-# so you can catch and report back any failure before the next phase starts.
-up: preflight install floci-up tf-apply kind-up deploy flows
+# Actually runs `tofu destroy` at every applied stage (tenant, platform,
+# provider), then stops the emulator. See scripts/99-teardown.sh.
+destroy:
+	DESTROY=1 bash scripts/99-teardown.sh
+
+# Full run, phase by phase, against PROVIDER (default aws). Intended to be
+# run interactively the first time so you can catch and report back any
+# failure before the next phase starts -- e.g.:
+#   make up PROVIDER=baremetal
+up: preflight install emulator-up provider-apply platform-apply tenant-apply flows
 	@echo ""
-	@echo "=== Stack is up. Run 'make status' for endpoints. ==="
+	@echo "=== Stack is up (PROVIDER=$(PROVIDER), TENANT=$(TENANT)). Run 'make status' for endpoints. ==="
