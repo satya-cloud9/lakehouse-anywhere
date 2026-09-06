@@ -42,6 +42,7 @@ resource "null_resource" "fetch_kubeconfig" {
   }
 
   provisioner "local-exec" {
+    interpreter = ["/bin/bash", "-c"]
     command = <<-EOT
       set -euo pipefail
       mkdir -p "${path.module}/generated"
