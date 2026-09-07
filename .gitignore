@@ -13,3 +13,10 @@ kubeconfig
 # on every apply, and can carry secret values (e.g. postgres admin secret
 # names/hosts) through the -var-file chain, so this is state, not source.
 terraform/generated/
+
+# Local, machine-specific variable overrides (e.g.
+# terraform/providers/baremetal/terraform.tfvars holding your box's own
+# IP/SSH user) -- these differ per person/machine running this repo and
+# aren't source either. Committed *.tfvars.example files are the template
+# instead; *.tfvars.json is already covered by terraform/generated/ above.
+*.tfvars
