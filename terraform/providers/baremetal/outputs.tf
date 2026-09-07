@@ -3,7 +3,7 @@
 
 output "kubeconfig_path" {
   description = "Local path to the kubeconfig fetched back from the k3s install."
-  value       = "${path.module}/generated/kubeconfig"
+  value       = abspath("${path.module}/generated/kubeconfig")
   depends_on  = [null_resource.fetch_kubeconfig]
 }
 
