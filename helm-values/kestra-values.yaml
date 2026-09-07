@@ -16,12 +16,21 @@
 # kestra/kestra` first and reconcile any key names that have drifted before
 # `helm install` — the `configuration:` block (Kestra's application.yaml)
 # is the part most likely to need adjusting.
-
-deployment:
-  type: Standalone
-
 image:
-  tag: latest   # pin a version once this has been run once
+  repository: kestra/kestra
+  tag: v1.3.37 
+
+deployments:
+  standalone:
+    enabled: true
+  webserver:
+    enabled: false
+  executor:
+    enabled: false
+  scheduler:
+    enabled: false
+  worker:
+    enabled: false
 
 resources:
   requests:
@@ -31,32 +40,29 @@ resources:
     cpu: "2"
     memory: 4Gi
 
-# Kestra's application.yaml, inlined. Postgres backend, local file storage
-# for task outputs (simplest for a first pass — switch to the S3 storage
-# plugin pointed at MinIO once this is running, for parity with a real-AWS
-# deployment).
-configuration: |
-  datasources:
-    postgres:
-      url: jdbc:postgresql://kestra-postgres.platform.svc.cluster.local:5432/kestra
-      driverClassName: org.postgresql.Driver
-      username: kestra
-      password: kestra
-  kestra:
-    server:
-      basicAuth:
-        enabled: false
-    repository:
-      type: postgres
-    storage:
-      type: local
-      local:
-        base-path: "/app/storage"
-    queue:
-      type: postgres
-    tasks:
-      tmp-dir:
-        path: /tmp/kestra-wd/tmp
+configurations:
+  application:
+    datasources:
+      postgres:
+        url: jdbc:postgresql://kestra-postgres.platform.svc.cluster.local:5432/kestra
+        driverClassName: org.postgresql.Driver
+        username: kestra
+        password: kestra
+    kestra:
+      server:
+        basicAuth:
+          enabled: false
+      repository:
+        type: postgres
+      storage:
+        type: local
+        local:
+          base-path: "/app/storage"
+      queue:
+        type: postgres
+      tasks:
+        tmp-dir:
+          path: /tmp/kestra-wd/tmp
 
 persistence:
   enabled: true

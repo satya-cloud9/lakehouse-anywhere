@@ -97,7 +97,7 @@ resource "kubernetes_deployment_v1" "shared_oltp" {
           name  = "postgres"
           image = "postgres:16-alpine"
           env_from {
-            secret_ref { name = kubernetes_secret_v1.shared_oltp.metadata[0].name }
+            secret_ref { name = kubernetes_secret_v1.shared_oltp[0].metadata[0].name }
           }
           port { container_port = 5432 }
           resources {
@@ -117,13 +117,13 @@ resource "kubernetes_deployment_v1" "shared_oltp" {
         volume {
           name = "data"
           persistent_volume_claim {
-            claim_name = kubernetes_persistent_volume_claim_v1.shared_oltp.metadata[0].name
+            claim_name = kubernetes_persistent_volume_claim_v1.shared_oltp[0].metadata[0].name
           }
         }
         volume {
           name = "bootstrap"
           config_map {
-            name = kubernetes_config_map_v1.shared_oltp_bootstrap.metadata[0].name
+            name = kubernetes_config_map_v1.shared_oltp_bootstrap[0].metadata[0].name
           }
         }
       }
