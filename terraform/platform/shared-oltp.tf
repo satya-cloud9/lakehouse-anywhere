@@ -15,6 +15,7 @@
 # shared_oltp -f -` once you have a real table to protect.
 
 resource "kubernetes_secret_v1" "shared_oltp" {
+  count = var.enable_shared_oltp ? 1 : 0
   metadata {
     name      = "shared-oltp"
     namespace = var.platform_namespace
@@ -27,6 +28,7 @@ resource "kubernetes_secret_v1" "shared_oltp" {
 }
 
 resource "kubernetes_config_map_v1" "shared_oltp_bootstrap" {
+  count = var.enable_shared_oltp ? 1 : 0
   metadata {
     name      = "shared-oltp-rls-bootstrap"
     namespace = var.platform_namespace
@@ -61,6 +63,7 @@ resource "kubernetes_config_map_v1" "shared_oltp_bootstrap" {
 }
 
 resource "kubernetes_persistent_volume_claim_v1" "shared_oltp" {
+  count = var.enable_shared_oltp ? 1 : 0
   metadata {
     name      = "shared-oltp-data"
     namespace = var.platform_namespace
@@ -75,6 +78,7 @@ resource "kubernetes_persistent_volume_claim_v1" "shared_oltp" {
 }
 
 resource "kubernetes_deployment_v1" "shared_oltp" {
+  count = var.enable_shared_oltp ? 1 : 0
   metadata {
     name      = "shared-oltp"
     namespace = var.platform_namespace
@@ -128,6 +132,7 @@ resource "kubernetes_deployment_v1" "shared_oltp" {
 }
 
 resource "kubernetes_service_v1" "shared_oltp" {
+  count = var.enable_shared_oltp ? 1 : 0
   metadata {
     name      = "shared-oltp"
     namespace = var.platform_namespace

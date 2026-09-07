@@ -36,3 +36,14 @@ variable "observability_namespace" {
   type    = string
   default = "observability"
 }
+variable "enable_observability" {
+  description = "kube-prometheus-stack + Loki + Tempo. ~1.75Gi requests / ~3.5Gi limits when on."
+  type        = bool
+  default     = true
+}
+
+variable "enable_shared_oltp" {
+  description = "The Shared OLTP Service (shared-oltp.tf). ~512Mi requests / ~1Gi limits when on."
+  type        = bool
+  default     = true
+}

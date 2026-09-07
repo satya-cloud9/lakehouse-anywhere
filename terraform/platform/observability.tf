@@ -3,6 +3,7 @@
 # into a per-tenant Grafana folder view rather than duplicated per tenant.
 
 resource "helm_release" "kube_prometheus_stack" {
+  count = var.enable_observability ? 1 : 0
   name       = "kube-prometheus-stack"
   repository = "https://prometheus-community.github.io/helm-charts"
   chart      = "kube-prometheus-stack"
@@ -12,6 +13,7 @@ resource "helm_release" "kube_prometheus_stack" {
 }
 
 resource "helm_release" "loki" {
+  count = var.enable_observability ? 1 : 0
   name       = "loki"
   repository = "https://grafana.github.io/helm-charts"
   chart      = "loki"
@@ -21,6 +23,7 @@ resource "helm_release" "loki" {
 }
 
 resource "helm_release" "tempo" {
+  count = var.enable_observability ? 1 : 0
   name       = "tempo"
   repository = "https://grafana.github.io/helm-charts"
   chart      = "tempo"
