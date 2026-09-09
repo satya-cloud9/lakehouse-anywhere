@@ -104,11 +104,14 @@ resource "helm_release" "nessie" {
 
   values = [
     yamlencode({
-      versionStoreType = "JDBC"
-      postgres = {
-        jdbcUrl  = "jdbc:postgresql://nessie-postgres.${var.platform_namespace}.svc.cluster.local:5432/nessie"
-        username = "nessie"
-        password = "nessie"
+      versionStoreType = "JDBC2"
+      jdbc = {
+        jdbcUrl = "jdbc:postgresql://nessie-postgres.${var.platform_namespace}.svc.cluster.local:5432/nessie"
+        secret = {
+          name     = kubernetes_secret_v1.nessie_postgres.metadata[0].name
+          username = "POSTGRES_USER"
+          password = "POSTGRES_PASSWORD"
+        }
       }
       service = {
         type = "ClusterIP"
