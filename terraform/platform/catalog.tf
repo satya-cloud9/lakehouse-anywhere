@@ -186,6 +186,7 @@ resource "helm_release" "nessie" {
         storage = {
           s3 = {
             defaultOptions = {
+              region          = "us-east-1"
               endpoint        = "http://minio.tenant-a.svc.cluster.local:9000"
               pathStyleAccess = true
               authType        = "STATIC"
