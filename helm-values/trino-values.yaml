@@ -51,4 +51,11 @@ worker:
 # file's `iceberg_catalog_properties` local.
 
 accessControl:
-  type: allow-all
+  # The chart's own `type` field only accepts "configmap" or "properties" --
+  # "allow-all" was never a valid value for it. Trino's built-in
+  # AllowAllSystemAccessControl plugin is selected via the actual
+  # access-control.properties file's own access-control.name key, which
+  # `type: properties` renders from this raw string.
+  type: properties
+  properties: |
+    access-control.name=allow-all
