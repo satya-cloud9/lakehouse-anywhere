@@ -12,7 +12,7 @@
 # through it.
 
 image:
-  tag: latest   # pin a version once this has been run once, e.g. "460"
+  tag: "483"
 
 server:
   workers: 1
