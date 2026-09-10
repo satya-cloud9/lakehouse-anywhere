@@ -19,6 +19,7 @@ resource "kubernetes_secret_v1" "tenant_pool_postgres" {
 }
 
 resource "kubernetes_persistent_volume_claim_v1" "tenant_pool_postgres" {
+  wait_until_bound = false
   metadata {
     name      = "tenant-pool-postgres-data"
     namespace = var.platform_namespace

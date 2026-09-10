@@ -26,6 +26,8 @@ resource "kubernetes_secret_v1" "nessie_postgres" {
 }
 
 resource "kubernetes_persistent_volume_claim_v1" "nessie_postgres" {
+  wait_until_bound = false
+
   metadata {
     name      = "nessie-postgres-data"
     namespace = var.platform_namespace
@@ -100,6 +102,11 @@ resource "helm_release" "nessie" {
   name       = "nessie"
   repository = "https://charts.projectnessie.org"
   chart      = "nessie"
+  # Pinned -- the repo index's "latest" (0.108.5) 404s on its own release
+  # asset upstream (broken/retracted release, not something wrong here).
+  # 0.108.4 is a known-good fallback: its image already pulled and ran
+  # successfully in earlier testing.
+  version    = "0.108.4"
   namespace  = var.platform_namespace
 
   values = [
@@ -120,5 +127,5 @@ resource "helm_release" "nessie" {
     })
   ]
 
-  depends_on = [kubernetes_service_v1.nessie_postgres]
+  depends_on = [kubernetes_deployment_v1.nessie_postgres, kubernetes_service_v1.nessie_postgres]
 }

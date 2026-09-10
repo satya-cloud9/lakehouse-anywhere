@@ -63,6 +63,7 @@ resource "kubernetes_config_map_v1" "shared_oltp_bootstrap" {
 }
 
 resource "kubernetes_persistent_volume_claim_v1" "shared_oltp" {
+  wait_until_bound = false
   count = var.enable_shared_oltp ? 1 : 0
   metadata {
     name      = "shared-oltp-data"

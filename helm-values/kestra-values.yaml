@@ -71,3 +71,13 @@ persistence:
 service:
   type: ClusterIP
   port: 8080
+
+# Disabled -- the rootless dind sidecar this chart adds by default needs
+# unprivileged user-namespace creation, which Ubuntu 23.10+/24.04's default
+# AppArmor policy blocks ("rootlesskit: fork/exec /proc/self/exe: operation
+# not permitted"). Nothing here uses the Docker task runner yet -- revisit
+# this separately (either loosen the AppArmor policy on the host, or skip
+# dind entirely in favor of a custom Kubernetes-pod-per-task runner plugin)
+# once the platform itself is stable.
+dind:
+  enabled: false

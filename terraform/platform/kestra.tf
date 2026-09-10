@@ -20,6 +20,8 @@ resource "kubernetes_secret_v1" "kestra_postgres" {
 }
 
 resource "kubernetes_persistent_volume_claim_v1" "kestra_postgres" {
+  wait_until_bound = false
+
   metadata {
     name      = "kestra-postgres-data"
     namespace = var.platform_namespace
@@ -105,5 +107,5 @@ resource "helm_release" "kestra" {
 
   values = [file("${path.module}/../../helm-values/kestra-values.yaml")]
 
-  depends_on = [kubernetes_service_v1.kestra_postgres]
+  depends_on = [kubernetes_deployment_v1.kestra_postgres, kubernetes_service_v1.kestra_postgres]
 }

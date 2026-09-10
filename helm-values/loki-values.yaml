@@ -16,7 +16,13 @@ loki:
     replication_factor: 1
   storage:
     type: filesystem
-
+deploymentMode: SingleBinary
+read:
+  replicas: 0
+write:
+  replicas: 0
+backend:
+  replicas: 0
 singleBinary:
   replicas: 1
   resources:
