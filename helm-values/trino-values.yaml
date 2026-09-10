@@ -33,6 +33,10 @@ coordinator:
     limits:
       cpu: "1"
       memory: 2Gi
+  startupProbe:
+    periodSeconds: 10
+    failureThreshold: 60
+    timeoutSeconds: 5
 
 worker:
   replicas: 1
@@ -45,6 +49,10 @@ worker:
     limits:
       cpu: "1"
       memory: 2Gi
+  startupProbe:
+    periodSeconds: 10
+    failureThreshold: 60
+    timeoutSeconds: 5
 
 # Iceberg catalog config is generated per-tenant by trino.tf (needs this
 # tenant's namespace and storage prefix interpolated in) -- see that
