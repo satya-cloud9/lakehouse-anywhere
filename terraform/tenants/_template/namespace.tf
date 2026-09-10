@@ -78,3 +78,34 @@ resource "kubernetes_network_policy_v1" "tenant_isolation" {
     }
   }
 }
+
+# A ResourceQuota tracking requests/limits on cpu+memory means every
+# container created in this namespace MUST declare all four fields itself
+# -- Kubernetes enforces this at admission time, no exceptions. Nothing
+# here supplied that for two containers we don't fully author ourselves:
+# create_pool_schema's psql container (postgres.tf) and MinIO's own
+# chart-provided hook jobs (minio-make-bucket/minio-make-user), both
+# rejected outright ("failed quota: must specify limits.cpu ..."). A
+# LimitRange is the standard pairing with a ResourceQuota -- it supplies
+# default request/limit values to any container that doesn't set its own,
+# fixing both at once without touching MinIO's third-party chart, and
+# covering anything else added to this namespace later.
+resource "kubernetes_limit_range_v1" "tenant" {
+  metadata {
+    name      = "${var.tenant_id}-default-limits"
+    namespace = kubernetes_namespace_v1.tenant.metadata[0].name
+  }
+  spec {
+    limit {
+      type = "Container"
+      default = {
+        cpu    = "500m"
+        memory = "512Mi"
+      }
+      default_request = {
+        cpu    = "100m"
+        memory = "128Mi"
+      }
+    }
+  }
+}
