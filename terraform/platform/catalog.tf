@@ -24,6 +24,16 @@ resource "kubernetes_secret_v1" "nessie_postgres" {
     POSTGRES_DB       = "nessie"
   }
 }
+resource "kubernetes_secret_v1" "nessie_minio_creds" {
+   metadata {
+      name = "nessie-minio-creds"
+      namespace = var.platform_namespace
+   }
+   data = {
+     awsAccessKeyId = "minioadmin"
+     awsSecretAccessKey = "minioadmin"
+   }
+}
 
 resource "kubernetes_persistent_volume_claim_v1" "nessie_postgres" {
   wait_until_bound = false
@@ -97,7 +107,6 @@ resource "kubernetes_service_v1" "nessie_postgres" {
     }
   }
 }
-
 resource "helm_release" "nessie" {
   name       = "nessie"
   repository = "https://charts.projectnessie.org"
@@ -111,6 +120,17 @@ resource "helm_release" "nessie" {
 
   values = [
     yamlencode({
+      # CORRECTED against the chart's real current shape (projectnessie/nessie
+      # helm/nessie/README.md) -- the old `postgres.jdbcUrl/username/password`
+      # keys above were never a real key in this chart, so they were silently
+      # ignored. That's why it failed on `secret "datasource-creds" not
+      # found`: with no jdbc.secret block supplied, the chart falls back to
+      # its own hardcoded default, which expects a secret literally named
+      # "datasource-creds" -- something nothing here ever created. Real
+      # shape is versionStoreType: JDBC2 ("JDBC" is a deprecated alias) plus
+      # a jdbc.secret block naming an *existing* secret and the KEY NAMES
+      # inside it holding the username/password (not literal values) -- so
+      # this points at the nessie-postgres secret already created above.
       versionStoreType = "JDBC2"
       jdbc = {
         jdbcUrl = "jdbc:postgresql://nessie-postgres.${var.platform_namespace}.svc.cluster.local:5432/nessie"
@@ -124,8 +144,65 @@ resource "helm_release" "nessie" {
         type = "ClusterIP"
         port = 19120
       }
+      # Every other component in this repo pins resources -- this was the
+      # one exception, meaning it ran BestEffort QoS (no CPU/memory floor,
+      # first evicted under node pressure) with a footprint invisible to
+      # any capacity planning. Sized as a small Quarkus/JVM REST service --
+      # lighter than Kestra's Standalone process, similar order of
+      # magnitude to Trino's coordinator. Adjust once you've actually
+      # observed it running.
+      resources = {
+        requests = { cpu = "500m", memory = "768Mi" }
+        limits   = { cpu = "1", memory = "1536Mi" }
+      }
+
+      # catalog.enabled defaults to FALSE in this chart -- confirmed via
+      # `helm show values nessie/nessie --version 0.108.4`, not guessed --
+      # and the Iceberg REST endpoint requires at least one warehouse and
+      # its backing object-store location configured before ANY request
+      # succeeds. This is what Trino's coordinator was actually stuck on at
+      # startup (inside StaticCatalogManager.loadInitialCatalogs): not a
+      # crash, just an endpoint with nothing behind it.
+      #
+      # Hardcoded to tenant-a for this first working cut -- Nessie is one
+      # shared platform-level service, but MinIO is deployed per-tenant
+      # (see terraform/tenants/_template/minio.tf), so each tenant needs
+      # its OWN named warehouse pointing at ITS OWN MinIO. trino.tf already
+      # anticipates this (iceberg.rest-catalog.warehouse = var.tenant_id);
+      # registering warehouses dynamically per-tenant, instead of
+      # statically here, is real follow-up work once a second tenant
+      # exists.
+      catalog = {
+        enabled = true
+        iceberg = {
+          defaultWarehouse = "tenant-a"
+          warehouses = [
+            {
+              name     = "tenant-a"
+              location = "s3://warehouse/"
+            }
+          ]
+        }
+        storage = {
+          s3 = {
+            defaultOptions = {
+              endpoint        = "http://minio.tenant-a.svc.cluster.local:9000"
+              pathStyleAccess = true
+              authType        = "STATIC"
+              accessKeySecret = {
+                name               = kubernetes_secret_v1.nessie_minio_creds.metadata[0].name
+                awsAccessKeyId     = "awsAccessKeyId"
+                awsSecretAccessKey = "awsSecretAccessKey"
+              }
+            }
+          }
+        }
+      }
     })
   ]
 
-  depends_on = [kubernetes_deployment_v1.nessie_postgres, kubernetes_service_v1.nessie_postgres]
+  depends_on = [
+    kubernetes_deployment_v1.nessie_postgres,
+    kubernetes_service_v1.nessie_postgres,
+  ]
 }
