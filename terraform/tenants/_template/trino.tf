@@ -17,12 +17,11 @@ locals {
     iceberg.catalog.type=rest
     iceberg.rest-catalog.uri=${var.catalog_uri}
     iceberg.rest-catalog.warehouse=${var.tenant_id}
-    fs.native-s3.enabled=true
+    fs.s3.enabled=true
     s3.aws-access-key=minioadmin
     s3.aws-secret-key=minioadmin
     s3.endpoint=http://minio.${var.tenant_id}.svc.cluster.local:9000
     s3.path-style-access=true
-    s3.ssl.enabled=false
     iceberg.file-format=PARQUET
   PROPERTIES
 }
