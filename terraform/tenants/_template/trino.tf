@@ -32,6 +32,13 @@ resource "helm_release" "trino" {
   chart      = "trino"
   namespace  = kubernetes_namespace_v1.tenant.metadata[0].name
 
+
+  # Separate from the pod-level startupProbe tuning in trino-values.yaml --
+  # this is Helm's own wait-for-ready timeout on the whole release
+  # (provider default 300s), which was expiring before the coordinator/
+  # worker's now-longer probe window even elapsed. Matched to roughly the
+  # same ceiling so neither one gives up before the other.
+  timeout = 600
   values = [
     file("${path.module}/../../../helm-values/trino-values.yaml"),
     yamlencode({
