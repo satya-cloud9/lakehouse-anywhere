@@ -20,6 +20,7 @@ locals {
     fs.s3.enabled=true
     s3.aws-access-key=minioadmin
     s3.aws-secret-key=minioadmin
+    s3.region=us-east-1
     s3.endpoint=http://minio.${var.tenant_id}.svc.cluster.local:9000
     s3.path-style-access=true
     iceberg.file-format=PARQUET
