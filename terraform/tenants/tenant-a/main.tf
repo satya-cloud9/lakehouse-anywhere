@@ -1,7 +1,3 @@
-# The first, and today only, tenant instantiation. A second tenant is
-# another file like this one -- copy it, change tenant_id, done; it is
-# NOT a copy of terraform/tenants/_template itself.
-
 module "tenant_a" {
   source = "../_template"
 
@@ -14,4 +10,6 @@ module "tenant_a" {
   tenant_pool_postgres_admin_secret = var.tenant_pool_postgres_admin_secret
   platform_namespace                = var.platform_namespace
   observability_namespace           = var.observability_namespace
+
+  kestra_service_account_name = var.kestra_service_account_name
 }

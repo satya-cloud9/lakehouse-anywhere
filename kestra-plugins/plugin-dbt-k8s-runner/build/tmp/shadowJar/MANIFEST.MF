@@ -1,0 +1,10 @@
+Manifest-Version: 1.0
+X-Kestra-Name: plugin-dbt-k8s-runner
+X-Kestra-Title: DBT Kubernetes Task Runner
+X-Kestra-Group: io.kestra.plugin.lakehouse.k8s
+X-Kestra-Description: Kubernetes task runner that executes each task in 
+ the tenant-owned namespace instead of the platform pod (dbt-first use c
+ ase)
+X-Kestra-Version: 0.1.0-SNAPSHOT
+Multi-Release: true
+

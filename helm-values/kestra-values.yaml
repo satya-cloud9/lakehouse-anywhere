@@ -17,8 +17,8 @@
 # `helm install` — the `configuration:` block (Kestra's application.yaml)
 # is the part most likely to need adjusting.
 image:
-  repository: kestra/kestra
-  tag: v1.3.37 
+  repository: kestra-lakehouse 
+  tag: v1.3.37-dbt-k8s-runner
 
 deployments:
   standalone:
@@ -50,8 +50,11 @@ configurations:
         password: kestra
     kestra:
       server:
-        basicAuth:
-          enabled: false
+        #basicAuth:
+          #enabled: false
+        basic-auth:
+          username: admin@kestra.io
+          password: Kestra2026
       repository:
         type: postgres
       storage:

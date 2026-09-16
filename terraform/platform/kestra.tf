@@ -104,8 +104,30 @@ resource "helm_release" "kestra" {
   repository = "https://helm.kestra.io"
   chart      = "kestra"
   namespace  = var.platform_namespace
+  version    = "1.3.37"
 
   values = [file("${path.module}/../../helm-values/kestra-values.yaml")]
 
   depends_on = [kubernetes_deployment_v1.kestra_postgres, kubernetes_service_v1.kestra_postgres]
+}
+
+# The tenant layer's per-tenant dbt execution namespace (see
+# terraform/tenants/_template/dbt-execution.tf) needs to grant this exact
+# ServiceAccount -- the one Kestra's own worker actually runs as -- a
+# RoleBinding in each tenant it's allowed to execute pipelines for. Rather
+# than hardcoding "kestra" as a literal string in the tenant module (which
+# is exactly the kind of unverified, chart-default-dependent assumption
+# that already broke once this session, when an unpinned chart version
+# silently changed how the whole release was structured), this data
+# source reads the ServiceAccount the chart actually created and exports
+# its real name as a platform output. If a future chart version changes
+# the fullname convention, this fails loudly at `tofu plan`/`apply` time
+# (resource not found) instead of silently producing a stale value.
+data "kubernetes_service_account_v1" "kestra" {
+  metadata {
+    name      = "kestra"
+    namespace = var.platform_namespace
+  }
+
+  depends_on = [helm_release.kestra]
 }

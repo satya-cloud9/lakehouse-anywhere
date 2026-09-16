@@ -25,3 +25,8 @@ output "tenant_pool_postgres_admin_secret" {
   description = "Name of the Secret (in the platform namespace) holding admin credentials for the shared pool-tier Postgres instance."
   value       = kubernetes_secret_v1.tenant_pool_postgres.metadata[0].name
 }
+
+output "kestra_service_account_name" {
+  description = "The real ServiceAccount name Kestra's own worker runs as, read back from the cluster (see kestra.tf's data source) rather than assumed from the chart's default naming convention. Consumed by terraform/tenants/_template/dbt-execution.tf's RoleBinding -- every tenant's dbt execution namespace grants exactly this identity, and only this identity, Pod-scoped access."
+  value       = data.kubernetes_service_account_v1.kestra.metadata[0].name
+}
