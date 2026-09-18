@@ -30,6 +30,17 @@ resource "kubernetes_resource_quota_v1" "tenant" {
   }
 }
 
+# A ResourceQuota tracking requests/limits on cpu+memory means every
+# container created in this namespace MUST declare all four fields itself
+# -- Kubernetes enforces this at admission time, no exceptions. Nothing
+# here supplied that for create_pool_schema's psql container (postgres.tf),
+# which was rejected outright ("failed quota: must specify limits.cpu ...").
+# A LimitRange is the standard pairing with a ResourceQuota -- it supplies
+# default request/limit values to any container that doesn't set its own,
+# fixing that without touching postgres.tf's own Job spec, and covering
+# anything else added to this namespace later. (Originally also needed for
+# MinIO's own chart-provided hook jobs, before object storage moved to the
+# provider layer -- see CONTRACT.md's "object-storage outputs" section.)
 resource "kubernetes_limit_range_v1" "tenant" {
   metadata {
     name      = "${var.tenant_id}-default-limits"
@@ -50,6 +61,21 @@ resource "kubernetes_limit_range_v1" "tenant" {
   }
 }
 
+# Ingress: default-deny, with explicit allows for same-namespace traffic,
+# the platform/observability namespaces, this tenant's own dbt execution
+# namespace (dbt-execution.tf, when enable_dbt_execution_namespace is
+# true -- structural and automatic, not something a tenant's main.tf has
+# to remember to grant), and whatever else a tenant's own main.tf opts
+# into via additional_allowed_namespaces (see variables.tf -- the
+# general-purpose mechanism for a genuinely one-off, audited grant that
+# isn't already covered by a first-class variable of its own).
+#
+# Egress is intentionally left open here -- pinning it down to exactly
+# DNS + the platform namespace + the shared object-storage endpoint
+# (CONTRACT.md's object_storage_endpoint, now a provider-layer address
+# rather than another namespace in this same cluster) is the more correct
+# end state, but needs verifying against what Trino/Kestra actually call
+# at runtime before locking it down without breaking them.
 resource "kubernetes_network_policy_v1" "tenant_isolation" {
   metadata {
     name      = "${var.tenant_id}-isolation-boundary"

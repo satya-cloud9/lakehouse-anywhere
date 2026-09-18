@@ -1,6 +1,9 @@
-# S3 bucket created against floci purely as a parity resource -- see
-# variables.tf's note on storage_bucket_name. The real Iceberg warehouse
-# data lives in MinIO, deployed by terraform/platform, not here.
+# S3 bucket created against floci. Originally a parity-only resource
+# (validating the HCL against AWS's real API shape, nothing more) --
+# promoted to the real, load-bearing shared object store once storage
+# moved into the provider contract (see CONTRACT.md's "object-storage
+# outputs" section). Nessie (terraform/platform) and every tenant's Trino
+# now point at this bucket directly, isolated by path prefix per tenant.
 
 resource "aws_s3_bucket" "parity" {
   bucket = var.storage_bucket_name

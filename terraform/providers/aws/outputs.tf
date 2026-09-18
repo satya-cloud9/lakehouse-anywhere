@@ -5,8 +5,11 @@
 
 output "kubeconfig_path" {
   description = "Local path to the kind cluster's kubeconfig."
-  value       = "${path.module}/generated/kubeconfig"
-  depends_on  = [null_resource.kind_cluster]
+  # abspath(): see the same note in providers/baremetal/outputs.tf -- this
+  # value crosses into terraform/platform/tenants, which apply from a
+  # different working directory, so a bare relative path breaks there.
+  value      = abspath("${path.module}/generated/kubeconfig")
+  depends_on = [null_resource.kind_cluster]
 }
 
 output "node_pool_refs" {
@@ -43,4 +46,25 @@ output "kms_key_id" {
 
 output "parity_bucket" {
   value = aws_s3_bucket.parity.bucket
+}
+
+# --- Object storage (CONTRACT.md's object-storage outputs) ---
+
+output "object_storage_endpoint" {
+  description = "See variables.tf's aws_emulator_pod_endpoint -- UNVERIFIED, confirm pod-reachability on first apply."
+  value       = var.aws_emulator_pod_endpoint
+}
+
+output "object_storage_bucket" {
+  value = aws_s3_bucket.parity.bucket
+}
+
+output "object_storage_access_key_id" {
+  value     = aws_iam_access_key.object_storage.id
+  sensitive = true
+}
+
+output "object_storage_secret_access_key" {
+  value     = aws_iam_access_key.object_storage.secret
+  sensitive = true
 }

@@ -27,6 +27,12 @@ resource "kubernetes_namespace_v1" "dbt_exec" {
   }
 }
 
+# Sized for transient task Pods (KubernetesTaskRunner's own PodResources
+# defaults in examples/02-dbt-run.yaml: 250m/1 cpu, 512Mi/1Gi memory per
+# Pod), not for the tenant's own always-on services -- deliberately its
+# own, smaller quota so a burst of concurrent pipeline runs can't compete
+# unbounded with anything else in the cluster, and can't be sized based on
+# what namespace.tf's tenant quota happens to be.
 resource "kubernetes_resource_quota_v1" "dbt_exec" {
   count = var.enable_dbt_execution_namespace ? 1 : 0
 
@@ -66,6 +72,14 @@ resource "kubernetes_limit_range_v1" "dbt_exec" {
   }
 }
 
+# The whole tenant-isolation property of the dbt Kubernetes task runner
+# lives here, in RBAC, not in the plugin's Java code (see
+# KubernetesTaskRunner.java's own class-level Javadoc). Cross-namespace
+# subject reference: the Role+RoleBinding are created IN this tenant's
+# execution namespace, but the RoleBinding's subject is a ServiceAccount
+# that lives in the platform namespace -- that's what lets the platform
+# worker act inside this one namespace without ever touching this
+# tenant's real resources, and without needing anything cluster-wide.
 resource "kubernetes_role_v1" "dbt_exec_runner" {
   count = var.enable_dbt_execution_namespace ? 1 : 0
 

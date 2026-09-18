@@ -24,18 +24,31 @@ resource "kubernetes_secret_v1" "nessie_postgres" {
     POSTGRES_DB       = "nessie"
   }
 }
-resource "kubernetes_secret_v1" "nessie_minio_creds" {
-   metadata {
-      name = "nessie-minio-creds"
-      namespace = var.platform_namespace
-   }
-   data = {
-     awsAccessKeyId = "minioadmin"
-     awsSecretAccessKey = "minioadmin"
-   }
+
+resource "kubernetes_secret_v1" "nessie_object_storage_creds" {
+  # Sourced from the provider layer now (CONTRACT.md's object-storage
+  # outputs), not a literal "minioadmin" -- this is the same credential
+  # every tenant's Trino also uses (see terraform/tenants/_template/trino.tf),
+  # since there's one shared bucket today and per-tenant credential
+  # scoping isn't wired up yet (documented as a known gap in CONTRACT.md).
+  metadata {
+    name      = "nessie-object-storage-creds"
+    namespace = var.platform_namespace
+  }
+  data = {
+    awsAccessKeyId     = var.object_storage_access_key_id
+    awsSecretAccessKey = var.object_storage_secret_access_key
+  }
 }
 
 resource "kubernetes_persistent_volume_claim_v1" "nessie_postgres" {
+  # local-path uses WaitForFirstConsumer binding -- it deliberately delays
+  # binding the PVC until a pod that mounts it is scheduled. Terraform's
+  # default wait_until_bound = true blocks THIS resource's own apply step
+  # waiting for Bound, but the consuming Deployment below never gets
+  # created until this step finishes -- a real deadlock, not specific to
+  # this box (confirmed against known kubernetes provider issues with
+  # local-path/WaitForFirstConsumer storage classes).
   wait_until_bound = false
 
   metadata {
@@ -107,6 +120,7 @@ resource "kubernetes_service_v1" "nessie_postgres" {
     }
   }
 }
+
 resource "helm_release" "nessie" {
   name       = "nessie"
   repository = "https://charts.projectnessie.org"
@@ -164,34 +178,55 @@ resource "helm_release" "nessie" {
       # startup (inside StaticCatalogManager.loadInitialCatalogs): not a
       # crash, just an endpoint with nothing behind it.
       #
-      # Hardcoded to tenant-a for this first working cut -- Nessie is one
-      # shared platform-level service, but MinIO is deployed per-tenant
-      # (see terraform/tenants/_template/minio.tf), so each tenant needs
-      # its OWN named warehouse pointing at ITS OWN MinIO. trino.tf already
-      # anticipates this (iceberg.rest-catalog.warehouse = var.tenant_id);
-      # registering warehouses dynamically per-tenant, instead of
-      # statically here, is real follow-up work once a second tenant
-      # exists.
+      # Storage now comes from the provider layer (CONTRACT.md's
+      # object-storage outputs), not a specific tenant's own MinIO -- see
+      # that file's "object-storage outputs" section for the full story of
+      # why this changed. The practical effect: `defaultWarehouse` below
+      # is genuinely tenant-agnostic, backed by a prefix in the shared
+      # bucket that exists from the moment the provider layer applies, so
+      # Nessie's readiness probe no longer depends on any tenant existing.
+      #
+      # What THIS does NOT yet fix: Nessie's warehouse-to-tenant mapping
+      # is still static server config -- there's no live API to register a
+      # new tenant's warehouse without restarting Nessie (confirmed against
+      # Nessie's own docs, not assumed). So the "tenant-a" entry below is
+      # still a literal, hand-maintained reference to one specific tenant,
+      # and a real second tenant means adding a line here and re-applying
+      # platform -- a smaller, config-time coupling than the boot-time one
+      # this change removes, not a full elimination of platform knowing
+      # tenant names. Fully dynamic registration (tenant's own apply
+      # updates this list and rolls Nessie, with no manual edit here) is
+      # real follow-up work, not yet built.
       catalog = {
         enabled = true
         iceberg = {
-          defaultWarehouse = "tenant-a"
+          defaultWarehouse = "default"
           warehouses = [
             {
+              name     = "default"
+              location = "s3://${var.object_storage_bucket}/_platform/"
+            },
+            {
               name     = "tenant-a"
-              location = "s3://warehouse/"
+              location = "s3://${var.object_storage_bucket}/tenant-a/"
             }
           ]
         }
         storage = {
           s3 = {
             defaultOptions = {
+              # Nessie's server-side S3 client (AWS SDK v2) requires SOME
+              # region value to be resolvable, even against MinIO which
+              # ignores it entirely -- confirmed via the actual health-check
+              # error: "Unable to load region from any of the providers in
+              # the chain" (env var, AWS profile, EC2 metadata service, all
+              # empty in this pod). A placeholder is sufficient.
               region          = "us-east-1"
-              endpoint        = "http://minio.tenant-a.svc.cluster.local:9000"
+              endpoint        = var.object_storage_endpoint
               pathStyleAccess = true
               authType        = "STATIC"
               accessKeySecret = {
-                name               = kubernetes_secret_v1.nessie_minio_creds.metadata[0].name
+                name               = kubernetes_secret_v1.nessie_object_storage_creds.metadata[0].name
                 awsAccessKeyId     = "awsAccessKeyId"
                 awsSecretAccessKey = "awsSecretAccessKey"
               }

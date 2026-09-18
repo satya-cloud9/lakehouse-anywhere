@@ -28,6 +28,24 @@ variable "workload_identity_mechanism" {
   type        = string
 }
 
+# --- from the provider layer directly (CONTRACT.md's object-storage
+# outputs) -- not from terraform/platform, since Trino talks to the
+# shared bucket the same way Nessie does, not through platform. ---
+
+variable "object_storage_endpoint" {
+  type = string
+}
+
+variable "object_storage_access_key_id" {
+  type      = string
+  sensitive = true
+}
+
+variable "object_storage_secret_access_key" {
+  type      = string
+  sensitive = true
+}
+
 # --- from terraform/platform's outputs ---
 
 variable "catalog_uri" {

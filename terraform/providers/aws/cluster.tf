@@ -13,6 +13,12 @@ resource "null_resource" "kind_cluster" {
   }
 
   provisioner "local-exec" {
+    # interpreter: local-exec defaults to /bin/sh, which on Debian/Ubuntu
+    # is dash -- dash doesn't understand `set -o pipefail` (bash-only) and
+    # errors immediately with "Illegal option -o pipefail". Force bash
+    # explicitly rather than dropping pipefail, since we actually want a
+    # failed `ssh`/`kind` command mid-pipeline to fail the whole thing.
+    interpreter = ["/bin/bash", "-c"]
     command = <<-EOT
       set -euo pipefail
       if kind get clusters 2>/dev/null | grep -qx "${var.cluster_name}"; then
