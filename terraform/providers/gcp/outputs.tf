@@ -31,7 +31,7 @@ locals {
 
 resource "local_file" "kubeconfig" {
   content         = local.kubeconfig_content
-  filename        = "${path.module}/generated/kubeconfig"
+  filename        = abspath("${path.module}/generated/kubeconfig")
   file_permission = "0600"
 }
 
@@ -49,8 +49,8 @@ output "workload_identity_mechanism" {
 }
 
 output "storage_class_name" {
-  description = "Real GKE's default is pd-balanced; unconfirmed whether floci-gcp's k3s backend pre-creates this StorageClass name or only k3s's own 'local-path' -- check `kubectl get storageclass` after your first apply."
-  value       = "pd-balanced"
+  description = "Real GKE's default is pd-balanced, but confirmed via kubectl get storageclass against this module's first real apply: floci-gcp's k3s backend only provides k3s's own built-in 'local-path' (rancher.io/local-path), same as providers/baremetal -- pd-balanced doesn't exist here, so any PVC requesting it sticks in Pending forever. Using the confirmed real value, not the real-GKE assumption, until/unless floci-gcp adds a pd-balanced-named StorageClass of its own."
+  value       = "local-path"
 }
 
 # --- GCP-specific extras ---
@@ -65,4 +65,25 @@ output "kestra_gsa_email" {
 
 output "parity_bucket" {
   value = google_storage_bucket.parity.name
+}
+
+# --- Object storage (CONTRACT.md's object-storage outputs) ---
+
+output "object_storage_endpoint" {
+  description = "See variables.tf's gcp_emulator_pod_endpoint -- UNVERIFIED, confirm pod-reachability on first apply."
+  value       = var.gcp_emulator_pod_endpoint
+}
+
+output "object_storage_bucket" {
+  value = google_storage_bucket.parity.name
+}
+
+output "object_storage_access_key_id" {
+  value     = google_storage_hmac_key.object_storage.access_id
+  sensitive = true
+}
+
+output "object_storage_secret_access_key" {
+  value     = google_storage_hmac_key.object_storage.secret
+  sensitive = true
 }

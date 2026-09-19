@@ -20,16 +20,19 @@ case "$PROVIDER" in
     COMPOSE_FILE="docker-compose.floci.yml"
     CONTAINER="lakehouse-floci"
     PORT=4566
+    HEALTH_PATH="/_localstack/health"
     ;;
   gcp)
     COMPOSE_FILE="docker-compose.floci-gcp.yml"
     CONTAINER="lakehouse-floci-gcp"
     PORT=4588
+    HEALTH_PATH="/health"
     ;;
   azure)
     COMPOSE_FILE="docker-compose.floci-az.yml"
     CONTAINER="lakehouse-floci-az"
     PORT=4577
+    HEALTH_PATH="/_localstack/health"
     ;;
   *)
     echo "Unknown PROVIDER='$PROVIDER' -- expected one of: baremetal, aws, gcp, azure" >&2
@@ -43,7 +46,7 @@ docker compose -f "$COMPOSE_FILE" up -d
 echo "Waiting for $CONTAINER to be healthy..."
 ATTEMPTS=0
 MAX_ATTEMPTS=30
-until curl -fs "http://localhost:${PORT}/_localstack/health" >/dev/null 2>&1; do
+until curl -fs "http://localhost:${PORT}${HEALTH_PATH}" >/dev/null 2>&1; do
   ATTEMPTS=$((ATTEMPTS + 1))
   if [ "$ATTEMPTS" -ge "$MAX_ATTEMPTS" ]; then
     echo "$CONTAINER did not become healthy after $((MAX_ATTEMPTS * 3))s."
@@ -59,7 +62,7 @@ until curl -fs "http://localhost:${PORT}/_localstack/health" >/dev/null 2>&1; do
 done
 
 echo "$CONTAINER is up. Service status:"
-curl -s "http://localhost:${PORT}/_localstack/health" | jq . || curl -s "http://localhost:${PORT}/_localstack/health"
+curl -s "http://localhost:${PORT}${HEALTH_PATH}" | jq . || curl -s "http://localhost:${PORT}${HEALTH_PATH}"
 
 echo ""
 echo "Next: PROVIDER=$PROVIDER bash scripts/03-apply-provider.sh"

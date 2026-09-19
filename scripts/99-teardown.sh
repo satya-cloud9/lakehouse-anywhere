@@ -27,13 +27,64 @@ if [ "$DESTROY" = "1" ]; then
       || echo "(destroy failed or nothing to destroy -- continuing)"
   fi
 
+
   echo "=== tofu destroy (terraform/platform) ==="
   (cd terraform/platform && tofu destroy -auto-approve -var-file="../generated/${PROVIDER}.tfvars.json") \
     || echo "(destroy failed or nothing to destroy -- continuing)"
 
-  echo "=== tofu destroy (terraform/providers/${PROVIDER}) ==="
-  (cd "terraform/providers/${PROVIDER}" && tofu destroy -auto-approve) \
-    || echo "(destroy failed or nothing to destroy -- continuing)"
+  # AWS-only: the parity bucket has versioning enabled (s3.tf) and, as
+  # applied historically, no force_destroy -- `tofu destroy` fails with
+  # BucketNotEmpty because a versioned bucket isn't empty until its old
+  # versions and delete markers are gone too, not just its current
+  # objects. s3.tf now sets force_destroy = true for future applies, but
+  # that's read at apply time -- it doesn't retroactively fix a bucket
+  # that was already created without it, so this cleanup stays here as a
+  # belt-and-suspenders step regardless. Skips quietly if the aws CLI
+  # isn't installed or floci isn't reachable; either way the destroy
+  # below will just surface the same BucketNotEmpty error it always did.
+  if [ "$PROVIDER" = "aws" ]; then
+    echo "=== Emptying S3 bucket before destroying terraform/providers/aws ==="
+    if command -v aws >/dev/null 2>&1; then
+      BUCKET="lakehouse-aws-parity"
+      if [ -f "terraform/generated/aws-outputs.json" ]; then
+        BUCKET="$(jq -r '.parity_bucket.value // "lakehouse-aws-parity"' terraform/generated/aws-outputs.json)"
+      fi
+
+      export AWS_ACCESS_KEY_ID="${AWS_ACCESS_KEY_ID:-test}"
+      export AWS_SECRET_ACCESS_KEY="${AWS_SECRET_ACCESS_KEY:-test}"
+      export AWS_DEFAULT_REGION="${AWS_DEFAULT_REGION:-us-east-1}"
+
+      aws --endpoint-url http://localhost:4566 s3api list-object-versions \
+        --bucket "$BUCKET" --output json \
+        --query '{Objects: Versions[].{Key:Key,VersionId:VersionId}}' \
+        > /tmp/floci-bucket-versions.json 2>/dev/null
+      if [ -s /tmp/floci-bucket-versions.json ] && ! grep -q '"Objects": null' /tmp/floci-bucket-versions.json; then
+        aws --endpoint-url http://localhost:4566 s3api delete-objects \
+          --bucket "$BUCKET" --delete file:///tmp/floci-bucket-versions.json \
+          || echo "(clearing object versions failed or nothing to clear -- continuing)"
+      fi
+
+      aws --endpoint-url http://localhost:4566 s3api list-object-versions \
+        --bucket "$BUCKET" --output json \
+        --query '{Objects: DeleteMarkers[].{Key:Key,VersionId:VersionId}}' \
+        > /tmp/floci-bucket-markers.json 2>/dev/null
+      if [ -s /tmp/floci-bucket-markers.json ] && ! grep -q '"Objects": null' /tmp/floci-bucket-markers.json; then
+        aws --endpoint-url http://localhost:4566 s3api delete-objects \
+          --bucket "$BUCKET" --delete file:///tmp/floci-bucket-markers.json \
+          || echo "(clearing delete markers failed or nothing to clear -- continuing)"
+      fi
+
+      rm -f /tmp/floci-bucket-versions.json /tmp/floci-bucket-markers.json
+    else
+      echo "aws CLI not found -- skipping bucket cleanup. If the destroy below fails"
+      echo "with BucketNotEmpty, empty the bucket by hand and re-run this script."
+    fi
+    echo ""
+  fi
+
+   echo "=== tofu destroy (terraform/providers/${PROVIDER}) ==="
+   (cd "terraform/providers/${PROVIDER}" && tofu destroy -auto-approve) \
+   || echo "(destroy failed or nothing to destroy -- continuing)"
 else
   echo "DESTROY not set -- leaving all Terraform state alone (this only stops the"
   echo "local emulator/cluster below). Re-run with DESTROY=1 to actually tear down"

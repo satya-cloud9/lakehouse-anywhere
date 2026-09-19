@@ -1,6 +1,6 @@
 services:
   floci-gcp:
-    image: floci/floci-gcp:0.9.0   # pin a version once this has been run once
+    image: floci/floci-gcp:latest   # pin a version once this has been run once
     container_name: lakehouse-floci-gcp
     ports:
       - "4588:4588"   # all 25 emulated GCP services, one endpoint -- see https://floci.io/gcp/
@@ -22,19 +22,11 @@ services:
       # own logs, not a guess.
       - "/var/run/docker.sock:/var/run/docker.sock"
     healthcheck:
-      # Confirmed against this image directly: no curl (or wget/python3/
-      # which/busybox/grep), only bash + GNU coreutils -- same missing-curl
-      # shape as floci's AWS image (see docker-compose.floci.yml's matching
-      # fix), plus grep is ALSO missing here specifically, so the match uses
-      # bash's own [[ ... ]] pattern test instead of piping to grep. Path is
-      # /health, confirmed via floci-gcp's own README -- it does not share
-      # floci's /_localstack/health convention. The $$ (not $) on $$response
-      # is required: Docker Compose does its own variable interpolation on
-      # this file before the command ever reaches the container, and a bare
-      # $response gets silently replaced with an empty string (confirmed via
-      # a "the response variable is not set" warning from compose itself,
-      # which made the check fail 100% of the time, not intermittently)
-      # unless escaped.
+      # Assumes floci-gcp shares floci's /_localstack/health convention --
+      # unconfirmed for this sibling project specifically (same caveat as
+      # before). Separately, confirmed the floci image family ships no
+      # curl/wget/python3 -- only bash + coreutils -- so this uses bash's
+      # built-in /dev/tcp instead, same as docker-compose.floci.yml.
       test:
         - CMD
         - bash

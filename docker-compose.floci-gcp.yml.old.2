@@ -1,0 +1,67 @@
+terraform {
+  required_version = ">= 1.5.0"
+
+  required_providers {
+    google = {
+      source  = "hashicorp/google"
+      version = "~> 5.0"
+    }
+    local = {
+      source  = "hashicorp/local"
+      version = "~> 2.4"
+    }
+  }
+}
+
+# Contract-test double against floci-gcp (https://floci.io/gcp/), the same
+# family as floci (AWS) and floci-az. floci-gcp documents its GKE emulation
+# as backed by a real local k3s cluster (not just faked API responses), so
+# unlike providers/aws this module does NOT also run `kind` itself -- it
+# reads the kubeconfig floci-gcp hands back from the google_container_cluster
+# resource below. Confirmed directly from this module's own first apply and
+# floci-gcp's container logs: on cluster creation, floci-gcp actually
+# launches a sibling `rancher/k3s` container on the HOST's Docker daemon
+# (see docker-compose.floci-gcp.yml's docker.sock mount and its comment) --
+# this is real, not faked.
+provider "google" {
+  project = var.gcp_project
+  region  = var.gcp_region
+
+  # Without a credential source, the provider falls back to hunting for
+  # real Application Default Credentials on the host, which don't exist
+  # here. access_token skips that search entirely -- it's attached as a
+  # bearer token on every request, and since every request goes to
+  # floci-gcp via the custom endpoints below rather than to real Google,
+  # nothing actually validates it. Reusing the same placeholder string
+  # outputs.tf's generated kubeconfig already uses for its own fake token,
+  # rather than inventing a second one.
+  access_token = "floci-gcp-local"
+
+  # Each of these three had to be worked out empirically, one real error at
+  # a time -- see the article/scratch notes for the debugging trail if you
+  # want the history. What's confirmed now:
+  #
+  # - The Google provider validates these against a format regex before
+  #   ever sending a request (must end in a path segment plus a trailing
+  #   slash) -- a bare host:port fails that check.
+  # - This provider version's own internal request path already includes
+  #   "v1/..." for container and IAM calls (confirmed via a doubled
+  #   "v1/v1/" in an early failed request) -- the endpoint itself should
+  #   NOT add another /v1/ on top for those two.
+  # - floci-gcp routes all 25 services behind one port using a per-service
+  #   path prefix for REST services. Container/GKE is confirmed (both from
+  #   floci-gcp's own docs and from its request logs) to need a "/container/"
+  #   prefix -- real requests land at /container/v1/projects/.../clusters.
+  # - IAM, despite looking like it should follow the same pattern, does
+  #   NOT get a prefix -- confirmed against floci-gcp's own documented route
+  #   (floci.io/floci-gcp/services/iam/): "POST .../v1/projects/{project}/serviceAccounts",
+  #   bare root, no /iam/. An earlier /iam/ guess by analogy with Container
+  #   was wrong and produced a 405 against something other than the real,
+  #   documented, implemented create handler.
+  # - Storage keeps the real GCP API's own "storage/v1/" path shape, which
+  #   is the convention documented for it directly, not a routing prefix
+  #   floci-gcp itself imposes the way container/iam use.
+  container_custom_endpoint = "${var.gcp_emulator_endpoint}/container/"
+  iam_custom_endpoint       = "${var.gcp_emulator_endpoint}/"
+  storage_custom_endpoint   = "${var.gcp_emulator_endpoint}/storage/v1/"
+}
