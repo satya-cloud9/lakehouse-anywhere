@@ -16,7 +16,7 @@
 resource "kubernetes_secret_v1" "nessie_postgres" {
   metadata {
     name      = "nessie-postgres"
-    namespace = var.platform_namespace
+    namespace = kubernetes_namespace_v1.platform.metadata[0].name
   }
   data = {
     POSTGRES_USER     = "nessie"
@@ -33,7 +33,7 @@ resource "kubernetes_secret_v1" "nessie_object_storage_creds" {
   # scoping isn't wired up yet (documented as a known gap in CONTRACT.md).
   metadata {
     name      = "nessie-object-storage-creds"
-    namespace = var.platform_namespace
+    namespace = kubernetes_namespace_v1.platform.metadata[0].name
   }
   data = {
     awsAccessKeyId     = var.object_storage_access_key_id
@@ -53,7 +53,7 @@ resource "kubernetes_persistent_volume_claim_v1" "nessie_postgres" {
 
   metadata {
     name      = "nessie-postgres-data"
-    namespace = var.platform_namespace
+    namespace = kubernetes_namespace_v1.platform.metadata[0].name
   }
   spec {
     access_modes       = ["ReadWriteOnce"]
@@ -67,7 +67,7 @@ resource "kubernetes_persistent_volume_claim_v1" "nessie_postgres" {
 resource "kubernetes_deployment_v1" "nessie_postgres" {
   metadata {
     name      = "nessie-postgres"
-    namespace = var.platform_namespace
+    namespace = kubernetes_namespace_v1.platform.metadata[0].name
   }
   spec {
     replicas = 1
@@ -110,7 +110,7 @@ resource "kubernetes_deployment_v1" "nessie_postgres" {
 resource "kubernetes_service_v1" "nessie_postgres" {
   metadata {
     name      = "nessie-postgres"
-    namespace = var.platform_namespace
+    namespace = kubernetes_namespace_v1.platform.metadata[0].name
   }
   spec {
     selector = { app = "nessie-postgres" }
@@ -130,7 +130,7 @@ resource "helm_release" "nessie" {
   # 0.108.4 is a known-good fallback: its image already pulled and ran
   # successfully in earlier testing.
   version    = "0.108.4"
-  namespace  = var.platform_namespace
+  namespace  = kubernetes_namespace_v1.platform.metadata[0].name
 
   values = [
     yamlencode({

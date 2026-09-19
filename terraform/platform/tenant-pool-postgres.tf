@@ -9,7 +9,7 @@
 resource "kubernetes_secret_v1" "tenant_pool_postgres" {
   metadata {
     name      = "tenant-pool-postgres"
-    namespace = var.platform_namespace
+    namespace = kubernetes_namespace_v1.platform.metadata[0].name
   }
   data = {
     POSTGRES_USER     = "pool_admin"
@@ -22,7 +22,7 @@ resource "kubernetes_persistent_volume_claim_v1" "tenant_pool_postgres" {
   wait_until_bound = false
   metadata {
     name      = "tenant-pool-postgres-data"
-    namespace = var.platform_namespace
+    namespace = kubernetes_namespace_v1.platform.metadata[0].name
   }
   spec {
     access_modes       = ["ReadWriteOnce"]
@@ -36,7 +36,7 @@ resource "kubernetes_persistent_volume_claim_v1" "tenant_pool_postgres" {
 resource "kubernetes_deployment_v1" "tenant_pool_postgres" {
   metadata {
     name      = "tenant-pool-postgres"
-    namespace = var.platform_namespace
+    namespace = kubernetes_namespace_v1.platform.metadata[0].name
   }
   spec {
     replicas = 1
@@ -79,7 +79,7 @@ resource "kubernetes_deployment_v1" "tenant_pool_postgres" {
 resource "kubernetes_service_v1" "tenant_pool_postgres" {
   metadata {
     name      = "tenant-pool-postgres"
-    namespace = var.platform_namespace
+    namespace = kubernetes_namespace_v1.platform.metadata[0].name
   }
   spec {
     selector = { app = "tenant-pool-postgres" }

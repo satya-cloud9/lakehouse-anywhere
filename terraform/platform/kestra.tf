@@ -10,7 +10,7 @@
 resource "kubernetes_secret_v1" "kestra_postgres" {
   metadata {
     name      = "kestra-postgres"
-    namespace = var.platform_namespace
+    namespace = kubernetes_namespace_v1.platform.metadata[0].name
   }
   data = {
     POSTGRES_USER     = "kestra"
@@ -24,7 +24,7 @@ resource "kubernetes_persistent_volume_claim_v1" "kestra_postgres" {
 
   metadata {
     name      = "kestra-postgres-data"
-    namespace = var.platform_namespace
+    namespace = kubernetes_namespace_v1.platform.metadata[0].name
   }
   spec {
     access_modes       = ["ReadWriteOnce"]
@@ -38,7 +38,7 @@ resource "kubernetes_persistent_volume_claim_v1" "kestra_postgres" {
 resource "kubernetes_deployment_v1" "kestra_postgres" {
   metadata {
     name      = "kestra-postgres"
-    namespace = var.platform_namespace
+    namespace = kubernetes_namespace_v1.platform.metadata[0].name
   }
   spec {
     replicas = 1
@@ -88,7 +88,7 @@ resource "kubernetes_deployment_v1" "kestra_postgres" {
 resource "kubernetes_service_v1" "kestra_postgres" {
   metadata {
     name      = "kestra-postgres"
-    namespace = var.platform_namespace
+    namespace = kubernetes_namespace_v1.platform.metadata[0].name
   }
   spec {
     selector = { app = "kestra-postgres" }
@@ -98,17 +98,59 @@ resource "kubernetes_service_v1" "kestra_postgres" {
     }
   }
 }
-
+# GHCR pull credentials for the private kestra-lakehouse image -- see
+# variables.tf's ghcr_username/ghcr_token doc comments and
+# docs/ROADMAP.md's "Image distribution" section. Confirmed against
+# `helm show values kestra/kestra --version 1.3.37`, which lists
+# `imagePullSecrets: []` at the values root (a plain list of
+# `{name: ...}` entries, the standard Kubernetes PodSpec shape) -- this
+# Secret's name ("ghcr-pull-secret") is what
+# helm-values/kestra-values.yaml's imagePullSecrets entry references.
+# type = kubernetes.io/dockerconfigjson is the Kubernetes-standard shape
+# for a registry credential; `data`'s value here is plain JSON on
+# purpose -- the kubernetes provider base64-encodes every `data` entry
+# itself before sending it to the API, so pre-encoding it here would
+# double-encode it.
+resource "kubernetes_secret_v1" "ghcr_pull" {
+  metadata {
+    name      = "ghcr-pull-secret"
+    namespace = kubernetes_namespace_v1.platform.metadata[0].name
+  }
+  type = "kubernetes.io/dockerconfigjson"
+  data = {
+    ".dockerconfigjson" = jsonencode({
+      auths = {
+        "ghcr.io" = {
+          username = var.ghcr_username
+          password = var.ghcr_token
+          auth     = base64encode("${var.ghcr_username}:${var.ghcr_token}")
+        }
+      }
+    })
+  }
+}
 resource "helm_release" "kestra" {
   name       = "kestra"
   repository = "https://helm.kestra.io"
   chart      = "kestra"
-  namespace  = var.platform_namespace
+  namespace  = kubernetes_namespace_v1.platform.metadata[0].name
   version    = "1.3.37"
 
   values = [file("${path.module}/../../helm-values/kestra-values.yaml")]
 
-  depends_on = [kubernetes_deployment_v1.kestra_postgres, kubernetes_service_v1.kestra_postgres]
+  # Overrides kestra-values.yaml's local-only fallback repository with
+  # the real GHCR path -- keeping the username out of the committed
+  # values file, since it's environment-specific even if not sensitive.
+  set {
+    name  = "image.repository"
+    value = "ghcr.io/${var.ghcr_username}/kestra-lakehouse"
+  }
+
+  depends_on = [
+    kubernetes_deployment_v1.kestra_postgres,
+    kubernetes_service_v1.kestra_postgres,
+    kubernetes_secret_v1.ghcr_pull,
+  ]
 }
 
 # The tenant layer's per-tenant dbt execution namespace (see
@@ -126,7 +168,7 @@ resource "helm_release" "kestra" {
 data "kubernetes_service_account_v1" "kestra" {
   metadata {
     name      = "kestra"
-    namespace = var.platform_namespace
+    namespace = kubernetes_namespace_v1.platform.metadata[0].name
   }
 
   depends_on = [helm_release.kestra]

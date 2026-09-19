@@ -16,10 +16,24 @@
 # kestra/kestra` first and reconcile any key names that have drifted before
 # `helm install` — the `configuration:` block (Kestra's application.yaml)
 # is the part most likely to need adjusting.
+
 image:
-  repository: kestra-lakehouse 
+  # repository below is a local-only fallback -- kestra.tf's helm_release
+  # now overrides it with a `set` block pointing at
+  # ghcr.io/<ghcr_username>/kestra-lakehouse instead (see that file and
+  # variables.tf's ghcr_username/ghcr_token). This line only matters if
+  # that override is ever removed; it does not need to be kept in sync.
+  repository: kestra-lakehouse   # custom image: stock kestra/kestra + plugin-dbt-k8s-runner's jar
+                                  # baked in via kestra-plugins/plugin-dbt-k8s-runner/docker/Dockerfile
   tag: v1.3.37-dbt-k8s-runner
 
+# Secret name only -- not sensitive, safe to commit. The credentials this
+# Secret actually holds come from kestra.tf's kubernetes_secret_v1.ghcr_pull,
+# built from variables.tf's ghcr_username/ghcr_token (gitignored
+# terraform.tfvars, never committed). See docs/ROADMAP.md's "Image
+# distribution" section for why this moved off a purely local-only image.
+imagePullSecrets:
+  - name: ghcr-pull-secret
 deployments:
   standalone:
     enabled: true

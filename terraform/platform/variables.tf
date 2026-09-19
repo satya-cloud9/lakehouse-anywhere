@@ -82,3 +82,24 @@ variable "enable_shared_oltp" {
   type        = bool
   default     = true
 }
+
+# --- GHCR credentials for the private kestra-lakehouse image ---
+# kestra-lakehouse (kestra-plugins/plugin-dbt-k8s-runner/docker/Dockerfile)
+# started as a purely local Docker tag, manually loaded into whichever
+# cluster needed it with provider-specific tooling (`k3s ctr images
+# import` on bare metal, `kind load docker-image` on the emulator
+# doubles -- see that plugin's README, step 3/3b). Pushed to GHCR instead
+# so every provider pulls the identical image over the network, no manual
+# per-cluster load step. Private for now -- see docs/ROADMAP.md's "Image
+# distribution" section for what gates flipping it to public.
+
+variable "ghcr_username" {
+  description = "GitHub username/org kestra-lakehouse was pushed under (ghcr.io/<this>/kestra-lakehouse). Not secret by itself -- GitHub usernames aren't -- but still environment-specific, so it belongs in a local terraform/platform/terraform.tfvars (gitignored, same convention as terraform/providers/baremetal's), not committed here."
+  type        = string
+}
+
+variable "ghcr_token" {
+  description = "GitHub PAT with read:packages scope -- used to build the imagePullSecret Kubernetes needs to pull the private kestra-lakehouse image. Set in terraform/platform/terraform.tfvars, never committed."
+  type        = string
+  sensitive   = true
+}
