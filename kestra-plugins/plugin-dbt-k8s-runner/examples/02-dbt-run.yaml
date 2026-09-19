@@ -19,7 +19,6 @@ tasks:
       type: io.kestra.plugin.lakehouse.k8s.KubernetesTaskRunner
       namespace: tenant-a-dbt-exec
       containerImage: dbt-runner:local
-      pullPolicy: IfNotPresent
       podServiceAccount: default
       waitUntilCompletion: PT30M
       resources:

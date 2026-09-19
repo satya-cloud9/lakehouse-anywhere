@@ -12,8 +12,18 @@ services:
       - "floci-az-data:/app/data"
     healthcheck:
       # Same caveat as docker-compose.floci-gcp.yml -- unconfirmed whether
-      # floci-az shares this health-check path.
-      test: ["CMD", "curl", "-f", "http://localhost:4577/_localstack/health"]
+      # floci-az shares this health-check path. Separately, confirmed the
+      # floci image family ships no curl/wget/python3 -- only bash +
+      # coreutils -- so this uses bash's built-in /dev/tcp instead, same
+      # as docker-compose.floci.yml.
+      test:
+        - CMD
+        - bash
+        - -c
+        - >-
+          exec 3<>/dev/tcp/127.0.0.1/4577 &&
+          printf 'GET /_localstack/health HTTP/1.1\r\nHost: localhost\r\nConnection: close\r\n\r\n' >&3 &&
+          head -c 15 <&3 | grep -q '200 OK'
       interval: 5s
       timeout: 5s
       retries: 20

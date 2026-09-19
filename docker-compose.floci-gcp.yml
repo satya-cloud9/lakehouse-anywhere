@@ -10,12 +10,19 @@ services:
     volumes:
       - "floci-gcp-data:/app/data"
     healthcheck:
-      # Assumes floci-gcp shares floci's /_localstack/health convention for
-      # LocalStack drop-in compatibility -- unconfirmed for this sibling
-      # project specifically. If this healthcheck never passes, check
-      # `docker compose -f docker-compose.floci-gcp.yml logs` for the real
-      # path and fix it here and in scripts/02-start-emulator.sh together.
-      test: ["CMD", "curl", "-f", "http://localhost:4588/_localstack/health"]
+      # Assumes floci-gcp shares floci's /_localstack/health convention --
+      # unconfirmed for this sibling project specifically (same caveat as
+      # before). Separately, confirmed the floci image family ships no
+      # curl/wget/python3 -- only bash + coreutils -- so this uses bash's
+      # built-in /dev/tcp instead, same as docker-compose.floci.yml.
+      test:
+        - CMD
+        - bash
+        - -c
+        - >-
+          exec 3<>/dev/tcp/127.0.0.1/4588 &&
+          printf 'GET /_localstack/health HTTP/1.1\r\nHost: localhost\r\nConnection: close\r\n\r\n' >&3 &&
+          head -c 15 <&3 | grep -q '200 OK'
       interval: 5s
       timeout: 5s
       retries: 20

@@ -10,14 +10,26 @@ services:
       - FLOCI_DEFAULT_REGION=us-east-1
     volumes:
       - "floci-data:/app/data"
+
     healthcheck:
-      # Floci serves LocalStack's /_localstack/health path for drop-in
-      # compatibility, so this check (and the ones in scripts/03 and
-      # scripts/status.sh) didn't need to change when we swapped tools.
-      test: ["CMD", "curl", "-f", "http://localhost:4566/_localstack/health"]
+      # Floci's image ships no curl/wget/python3 -- confirmed by hand,
+      # `docker exec lakehouse-floci ls /bin` shows only bash + coreutils.
+      # bash IS present, so this uses its built-in /dev/tcp support to
+      # open a raw socket and send a real HTTP GET, then checks for a
+      # "200 OK" status line -- same endpoint, same intent as the
+      # original curl-based check (also used by scripts/03 and
+      # scripts/status.sh), just without relying on a binary that
+      # doesn't exist in this image.
+      test:
+        - CMD
+        - bash
+        - -c
+        - >-
+          exec 3<>/dev/tcp/127.0.0.1/4566 &&
+          printf 'GET /_localstack/health HTTP/1.1\r\nHost: localhost\r\nConnection: close\r\n\r\n' >&3 &&
+          head -c 15 <&3 | grep -q '200 OK'
       interval: 5s
       timeout: 5s
       retries: 20
-
 volumes:
   floci-data:
